@@ -24,6 +24,10 @@ Read in this exact order before any implementation:
 
 - Never use hardcoded hex values or raw Tailwind color classes
 - Update `progress-tracker.md` and `ui-registry.md` after every feature
+- After every feature, create `docs/plan/<feature-slug>/` with three files:
+  - `plan.md` — what was built and why
+  - `explanation.md` — deep explanation of every technical decision for learning
+  - `ai-discussion-topics.md` — suggested prompts for deeper AI conversation
 - Before any third party library — load its installed skill first,
   then read `context/library-docs.md` for project-specific rules
 - If the same problem persists after one corrective prompt —
