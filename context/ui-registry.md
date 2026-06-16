@@ -173,3 +173,47 @@ Last updated: 2026-06-15
 
 **Pattern notes:**
 The only component in this project using an inline `style` prop. This is the approved exception for gradients: use `var(--color-name)` CSS variable references, never hex values. Text opacity (`text-white/70`) and background opacity (`border-white/30`, `hover:bg-white/10`) use Tailwind's `/` opacity modifier against white — this is correct for dark/gradient backgrounds. Button padding `px-6 py-3` matches Hero CTAs exactly.
+
+---
+
+### ComingSoonCard
+
+File: `components/layout/ComingSoonCard.tsx`
+Last updated: 2026-06-16
+
+| Property         | Class                               |
+| ---------------- | ------------------------------------ |
+| Background       | `bg-surface`                        |
+| Border           | `border border-border`              |
+| Border radius    | `rounded-2xl`                       |
+| Text — primary   | `text-text-primary` (title, `font-semibold`) |
+| Text — secondary | n/a                                 |
+| Text — muted     | `text-text-muted` (description)     |
+| Spacing          | `p-6` (card), `mb-1` (title), `mb-6` (description) |
+| Hover state      | none                                |
+| Shadow           | `shadow-lg`                         |
+| Accent usage     | none                                |
+
+**Pattern notes:**
+Empty-state card per `ui-rules.md` — title is `text-base font-semibold` (matches Features card heading weight), description is muted per the Empty States rule, and a `SignOutButton` serves as the rule's "CTA button if there's a logical next action." Used identically by `/dashboard`, `/profile`, `/find-jobs` placeholder pages — these are throwaway stubs, fully replaced when Features 05/09/14 build the real pages.
+
+---
+
+### SignOutButton
+
+File: `components/layout/SignOutButton.tsx`
+Last updated: 2026-06-16
+
+| Property         | Class                                |
+| ---------------- | ------------------------------------- |
+| Background       | `bg-surface`                         |
+| Border           | `border border-border`               |
+| Border radius    | `rounded-md`                         |
+| Text — primary   | `text-text-primary`                  |
+| Spacing          | `px-4 py-2`                          |
+| Hover state      | `hover:bg-surface-secondary transition-colors` |
+| Shadow           | none                                  |
+| Accent usage     | none — secondary button styling, not a primary action |
+
+**Pattern notes:**
+Plain `<form action={signOut}>` wrapping a submit button — same no-client-JS pattern as the login page's OAuth buttons (`app/actions/auth.ts`). Matches the existing secondary-button token combination (`bg-surface border border-border rounded-md`) rather than introducing a new button variant.

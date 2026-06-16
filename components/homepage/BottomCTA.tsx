@@ -1,6 +1,9 @@
 import Link from "next/link";
+import { getCtaHref } from "@/lib/auth";
 
-export function BottomCTA() {
+export async function BottomCTA() {
+  const ctaHref = await getCtaHref();
+
   return (
     <section
       className="w-full py-24"
@@ -19,7 +22,7 @@ export function BottomCTA() {
         </p>
         <div className="flex items-center gap-4 mt-2">
           <Link
-            href="/login"
+            href={ctaHref}
             className="bg-white text-text-primary text-sm font-medium px-6 py-3 rounded-md hover:bg-surface-secondary transition-colors"
           >
             Get Started

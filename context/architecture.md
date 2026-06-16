@@ -32,14 +32,15 @@
 │   ├── library-docs.md
 │   ├── build-plan.md
 │   └── progress-tracker.md
+├── proxy.ts                                 → Session refresh + protected route gate (Next.js 16 renamed middleware.ts to proxy.ts)
 ├── app/
+│   ├── actions/
+│   │   └── auth.ts                        → Server Actions starting the OAuth/PKCE flow
 │   ├── layout.tsx                          → Root layout, PostHog provider
 │   ├── page.tsx                            → Homepage
 │   ├── (auth)/
-│   │   ├── login/
-│   │   │   └── page.tsx                   → Login page
-│   │   └── callback/
-│   │       └── page.tsx                   → OAuth callback handler
+│   │   └── login/
+│   │       └── page.tsx                   → Login page
 │   ├── dashboard/
 │   │   └── page.tsx                       → Main dashboard
 │   ├── profile/
@@ -49,12 +50,16 @@
 │   │   └── [id]/
 │   │       └── page.tsx                   → Individual job details page
 │   └── api/
+│       ├── auth/
+│       │   ├── callback/route.ts          → Exchanges OAuth code for a session (PKCE)
+│       │   ├── refresh/route.ts           → Session refresh endpoint
+│       │   └── sign-out/route.ts          → Clears auth cookies
 │       ├── agent/
 │       │   ├── find/route.ts              → Trigger Adzuna job discovery
 │       │   └── research/route.ts          → Trigger company research agent
-│       ├── resume/
-│       │   ├── generate/route.ts          → Generate base resume PDF from profile
-│       │   └── extract/route.ts           → Extract profile data from uploaded resume PDF
+│       └── resume/
+│           ├── generate/route.ts          → Generate base resume PDF from profile
+│           └── extract/route.ts           → Extract profile data from uploaded resume PDF
 ├── agent/
 │   ├── adzuna.ts                          → Adzuna API job discovery + GPT-4o scoring
 │   ├── research.ts                        → Company research — Browserbase + Stagehand + GPT-4o
@@ -293,47 +298,44 @@ Access: authenticated users only, own files only.
 - Methods: Google OAuth, GitHub OAuth
 - Protected routes: /dashboard, /profile, /find-jobs, /find-jobs/[id]
 - Public routes: /, /login
-- Middleware in middleware.ts checks session on every protected route
+- Proxy in proxy.ts (Next.js 16 renamed `middleware.ts` to `proxy.ts`) refreshes the session via `updateSession()` and redirects unauthenticated requests to /login on every protected route
 - On login → redirect to /dashboard
 
 ---
 
 ## InsForge Client Pattern
 
-Two separate InsForge instances — never mix them:
+The real package is `@insforge/sdk`. SSR helpers live at the `@insforge/sdk/ssr` and `@insforge/sdk/ssr/middleware` subpaths — there is no separate `@insforge/ssr` package. Three separate surfaces, never mixed:
 
 ```typescript
 // lib/insforge-client.ts
-// Browser-side — used in client components for auth state
-import { createBrowserClient } from "@insforge/ssr";
-export const insforge = createBrowserClient(
-  process.env.NEXT_PUBLIC_INSFORGE_URL!,
-  process.env.NEXT_PUBLIC_INSFORGE_ANON_KEY!,
-);
+// Browser-side — Client Components only. No auth mutations (signIn/signUp/signOut)
+// are exposed here by design; those run server-side so auth cookies stay server-owned.
+import { createBrowserClient } from "@insforge/sdk/ssr";
+export const insforge = createBrowserClient(); // reads NEXT_PUBLIC_INSFORGE_URL / NEXT_PUBLIC_INSFORGE_ANON_KEY
 
 // lib/insforge-server.ts
-// Server-side — used in API routes, Server Actions, agent code
-import { createServerClient } from "@insforge/ssr";
+// Server-side — Server Components, Route Handlers, agent code. Read-only session access.
+import { createServerClient } from "@insforge/sdk/ssr";
 import { cookies } from "next/headers";
 
 export const createInsforgeServer = async () => {
-  const cookieStore = await cookies();
-  return createServerClient(
-    process.env.NEXT_PUBLIC_INSFORGE_URL!,
-    process.env.NEXT_PUBLIC_INSFORGE_ANON_KEY!,
-    {
-      cookies: {
-        getAll: () => cookieStore.getAll(),
-        setAll: (cookiesToSet) => {
-          cookiesToSet.forEach(({ name, value, options }) =>
-            cookieStore.set(name, value, options),
-          );
-        },
-      },
-    },
-  );
+  return createServerClient({ cookies: await cookies() });
 };
+// Usage: const insforge = await createInsforgeServer();
+//        const { data } = await insforge.auth.getCurrentUser(); // not getUser()
+
+// app/actions/auth.ts ("use server")
+// Auth mutations (sign-in, sign-up, sign-out, OAuth) only run here or in Route Handlers.
+import { createAuthActions } from "@insforge/sdk/ssr";
+const auth = createAuthActions({ cookies: await cookies() });
 ```
+
+OAuth in SSR is a server-driven PKCE flow, not a client-side token-in-URL flow:
+1. A Server Action calls `auth.signInWithOAuth(provider, { redirectTo, skipBrowserRedirect: true })`, stores the returned `codeVerifier` in an httpOnly cookie, then redirects to `data.url`.
+2. `app/api/auth/callback/route.ts` reads the `insforge_code` query param and the verifier cookie, calls `auth.exchangeOAuthCode(code, verifier)`, and redirects to `/dashboard`.
+
+`@insforge/sdk/ssr/middleware` exports `updateSession()`, used in `proxy.ts` to refresh the session before Server Components render.
 
 ---
 

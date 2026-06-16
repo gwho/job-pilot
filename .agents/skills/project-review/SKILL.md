@@ -1,5 +1,5 @@
 ---
-name: review
+name: project-review
 description: After building a feature, verify it matches what was planned, respects the system architecture and design standards, and is ready for production. Reports issues clearly so the developer decides what to fix.
 ---
 
