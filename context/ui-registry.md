@@ -202,7 +202,7 @@ Empty-state card per `ui-rules.md` — title is `text-base font-semibold` (match
 ### SignOutButton
 
 File: `components/layout/SignOutButton.tsx`
-Last updated: 2026-06-16
+Last updated: 2026-06-17
 
 | Property         | Class                                |
 | ---------------- | ------------------------------------- |
@@ -216,4 +216,71 @@ Last updated: 2026-06-16
 | Accent usage     | none — secondary button styling, not a primary action |
 
 **Pattern notes:**
-Plain `<form action={signOut}>` wrapping a submit button — same no-client-JS pattern as the login page's OAuth buttons (`app/actions/auth.ts`). Matches the existing secondary-button token combination (`bg-surface border border-border rounded-md`) rather than introducing a new button variant.
+Plain `<form action={signOut}>` wrapping `SignOutPostHogResetButton`, a client-only submit button that calls `posthog.reset()` before the server action clears the session. Visual classes are unchanged from the original button and continue to match the secondary-button token combination (`bg-surface border border-border rounded-md`).
+
+---
+
+### PostHogIdentity
+
+File: `components/analytics/PostHogIdentity.tsx`
+Last updated: 2026-06-17
+
+| Property         | Class |
+| ---------------- | ----- |
+| Background       | n/a   |
+| Border           | n/a   |
+| Border radius    | n/a   |
+| Text — primary   | n/a   |
+| Text — secondary | n/a   |
+| Spacing          | n/a   |
+| Hover state      | n/a   |
+| Shadow           | n/a   |
+| Accent usage     | n/a   |
+
+**Pattern notes:**
+Behavior-only client component mounted in `app/layout.tsx`. It renders `null`, identifies authenticated users with PostHog when `userId` is present, and resets PostHog identity when the app renders without a user.
+
+---
+
+### SignOutPostHogResetButton
+
+File: `components/layout/SignOutPostHogResetButton.tsx`
+Last updated: 2026-06-17
+
+| Property         | Class |
+| ---------------- | ----- |
+| Background       | `bg-surface` |
+| Border           | `border border-border` |
+| Border radius    | `rounded-md` |
+| Text — primary   | `text-text-primary` |
+| Text — secondary | n/a |
+| Spacing          | `px-4 py-2` |
+| Hover state      | `hover:bg-surface-secondary transition-colors` |
+| Shadow           | none |
+| Accent usage     | none — secondary button styling, not a primary action |
+
+**Pattern notes:**
+Same visual contract as `SignOutButton`; split into a client component solely because PostHog browser identity reset requires a click handler.
+
+---
+
+### Login OAuth Error Message
+
+File: `app/(auth)/login/page.tsx`
+Last updated: 2026-06-17
+
+| Property         | Class                                      |
+| ---------------- | ------------------------------------------ |
+| Background       | `bg-surface`                               |
+| Border           | `border border-error`                      |
+| Border radius    | `rounded-md`                               |
+| Text — primary   | `text-error`                               |
+| Text — secondary | n/a                                        |
+| Text — muted     | n/a                                        |
+| Spacing          | `mb-4`, `px-3 py-2`                        |
+| Hover state      | none                                       |
+| Shadow           | none                                       |
+| Accent usage     | `border-error text-error` for failure only |
+
+**Pattern notes:**
+Small inline auth failure message rendered inside the existing login card when `/login?error=oauth` is present. It intentionally keeps the card white (`bg-surface`) and uses error color only for the border/text so it follows the rule that color goes inside cards, not on the card surface. Reuse this compact `rounded-md border border-error bg-surface px-3 py-2 text-sm font-medium text-error` pattern for future form-level auth errors.

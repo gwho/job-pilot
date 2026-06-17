@@ -1,7 +1,11 @@
 import { createInsforgeServer } from "@/lib/insforge-server";
 
-export async function getCtaHref() {
-  const insforge = await createInsforgeServer();
-  const { data } = await insforge.auth.getCurrentUser();
-  return data.user ? "/dashboard" : "/login";
+export async function getCtaHref(): Promise<string> {
+  try {
+    const insforge = await createInsforgeServer();
+    const { data } = await insforge.auth.getCurrentUser();
+    return data.user ? "/dashboard" : "/login";
+  } catch {
+    return "/login";
+  }
 }

@@ -59,7 +59,9 @@ import { createAuthActions } from "@insforge/sdk/ssr";
 
 const auth = createAuthActions({ cookies: await cookies() });
 // or, in a Route Handler with separate request/response cookies:
+// const response = NextResponse.json({ success: true });
 // createAuthActions({ requestCookies: request.cookies, responseCookies: response.cookies })
+// where `response.cookies` is the outgoing NextResponse cookie writer.
 ```
 
 **Rules:**
@@ -92,11 +94,23 @@ import { createAuthActions } from "@insforge/sdk/ssr";
 export async function signInWithGoogle() {
   const cookieStore = await cookies();
   const auth = createAuthActions({ cookies: cookieStore });
-  const { data, error } = await auth.signInWithOAuth("google", {
-    redirectTo: new URL("/api/auth/callback", process.env.NEXT_PUBLIC_APP_URL).toString(),
-    skipBrowserRedirect: true,
-  });
-  if (error || !data.url || !data.codeVerifier) throw new Error(error?.message ?? "OAuth init failed");
+  let result;
+
+  try {
+    result = await auth.signInWithOAuth("google", {
+      redirectTo: new URL("/api/auth/callback", process.env.NEXT_PUBLIC_APP_URL).toString(),
+      skipBrowserRedirect: true,
+    });
+  } catch (error) {
+    console.error("[actions/auth]", error);
+    redirect("/login?error=oauth");
+  }
+
+  const { data, error } = result;
+  if (error || !data.url || !data.codeVerifier) {
+    console.error("[actions/auth]", error ?? "OAuth init failed");
+    redirect("/login?error=oauth");
+  }
 
   cookieStore.set("insforge_code_verifier", data.codeVerifier, {
     httpOnly: true,
@@ -116,17 +130,28 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createAuthActions } from "@insforge/sdk/ssr";
 
 export async function GET(request: NextRequest) {
-  const code = request.nextUrl.searchParams.get("insforge_code");
-  const verifier = (await cookies()).get("insforge_code_verifier")?.value;
-  if (!code || !verifier) return NextResponse.redirect(new URL("/login?error=oauth", request.url));
+  try {
+    const code = request.nextUrl.searchParams.get("insforge_code");
+    const verifier = (await cookies()).get("insforge_code_verifier")?.value;
+    if (!code || !verifier) return NextResponse.redirect(new URL("/login?error=oauth", request.url));
 
-  const response = NextResponse.redirect(new URL("/dashboard", request.url));
-  const auth = createAuthActions({ requestCookies: request.cookies, responseCookies: response.cookies });
-  const { error } = await auth.exchangeOAuthCode(code, verifier);
-  if (error) return NextResponse.redirect(new URL("/login?error=oauth", request.url));
+    const response = NextResponse.redirect(new URL("/dashboard", request.url));
+    const auth = createAuthActions({
+      requestCookies: request.cookies,
+      responseCookies: response.cookies, // outgoing response writer, not request.cookies
+    });
+    const { error } = await auth.exchangeOAuthCode(code, verifier);
+    if (error) {
+      console.error("[api/auth/callback]", error);
+      return NextResponse.redirect(new URL("/login?error=oauth", request.url));
+    }
 
-  response.cookies.delete("insforge_code_verifier");
-  return response;
+    response.cookies.delete("insforge_code_verifier");
+    return response;
+  } catch (error) {
+    console.error("[api/auth/callback]", error);
+    return NextResponse.redirect(new URL("/login?error=oauth", request.url));
+  }
 }
 ```
 
@@ -135,6 +160,7 @@ export async function GET(request: NextRequest) {
 - `getCurrentUser()` is the only get-user method — there is no `getUser()`
 - OAuth code verifier is stored in an httpOnly app cookie, never exposed to the browser
 - Session refresh in `proxy.ts` uses `updateSession()` from `@insforge/sdk/ssr/middleware`
+- In Route Handlers, always create the outgoing `NextResponse` first and pass that response's `.cookies` object as `responseCookies`; never pass `request.cookies` as the writer.
 
 ---
 
@@ -602,10 +628,19 @@ import posthog from "posthog-js";
 
 export function initPostHog() {
   if (typeof window !== "undefined") {
-    posthog.init(process.env.NEXT_PUBLIC_POSTHOG_KEY!, {
-      api_host: process.env.NEXT_PUBLIC_POSTHOG_HOST!,
-      capture_pageview: false, // manual pageview tracking
-    });
+posthog.init(process.env.NEXT_PUBLIC_POSTHOG_KEY!, {
+  api_host:
+    process.env.NODE_ENV === "development"
+      ? process.env.NEXT_PUBLIC_POSTHOG_HOST!
+      : "/ingest",
+  autocapture: false,
+  capture_pageview: false, // manual pageview tracking
+  capture_exceptions: false,
+  disable_session_recording: true,
+  disable_surveys: true,
+  disable_product_tours: true,
+  disable_web_experiments: true,
+});
   }
 }
 
@@ -648,6 +683,8 @@ await posthog.shutdown(); // required — ensures event is sent
 - Always include `userId` as a property on every server-side event
 - Call `posthog.identify(userId)` after login on client side
 - Call `posthog.reset()` on logout on client side
+- Browser-side PostHog must use `NEXT_PUBLIC_POSTHOG_HOST` directly in development and `/ingest` only outside development. This keeps local dev from surfacing reverse-proxy failures as app-origin 500s while preserving the production proxy path.
+- Keep `autocapture`, exception capture, session recording, surveys, product tours, and web experiments disabled unless `code-standards.md` is explicitly expanded with the extra events those features produce.
 
 ---
 

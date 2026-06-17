@@ -7,8 +7,8 @@ Update this file after every completed feature. Any AI agent reading this should
 ## Current Status
 
 **Phase:** Phase 1 — Foundation
-**Last completed:** 02 Auth
-**Next:** 03 PostHog Initialization
+**Last completed:** 03 PostHog Initialization
+**Next:** 04 Database Schema
 
 ---
 
@@ -18,7 +18,7 @@ Update this file after every completed feature. Any AI agent reading this should
 
 - [x] 01 Homepage
 - [x] 02 Auth
-- [ ] 03 PostHog Initialization
+- [x] 03 PostHog Initialization
 - [ ] 04 Database Schema
 
 ### Phase 2 — Profile Page
@@ -51,6 +51,8 @@ Update this file after every completed feature. Any AI agent reading this should
 ## Decisions Made During Build
 
 - **02 Auth**: `context/architecture.md`, `library-docs.md`, and `code-standards.md` referenced a fictional `@insforge/ssr` package and a `middleware.ts` file. Verified against the real published `@insforge/sdk` (v1.4.2, via npm registry + unpkg) and later confirmed via the InsForge MCP once it became available in-session. Corrected all three context files in place: real package is `@insforge/sdk` (SSR helpers at `@insforge/sdk/ssr` and `@insforge/sdk/ssr/middleware`), OAuth is a server-driven PKCE flow (not client-side token-in-URL), get-user method is `getCurrentUser()` not `getUser()`, and Next.js 16 requires `proxy.ts` not `middleware.ts`. Full rationale in `docs/plan/02-auth/explanation.md`.
+- **02 Auth completion**: Follow-up audit in `docs/diff/02-auth/README.md` found that the callback and API sign-out routes passed `request.cookies` where the SDK needed the outgoing response cookie writer, and that `proxy.ts` checked the original request cookie instead of `updateSession()`'s refreshed token. Completion pass fixes those issues, adds a friendly `/login?error=oauth` state, keeps the Server Action sign-out button, and documents the corrected Route Handler pattern in `context/library-docs.md`. Full plan in `docs/diff/02-auth/implementation-plan.md`; formal completion docs in `docs/plan/02-auth-completion/`.
+- **03 PostHog Initialization**: PostHog is initialized through `instrumentation-client.ts` with the existing reverse proxy, server events now use one-shot clients that call `shutdown()` before returning, the root layout identifies returning authenticated users on the client, and sign-out resets browser identity before the server action clears the session. Full docs in `docs/plan/03-posthog-initialization/`.
 
 ---
 

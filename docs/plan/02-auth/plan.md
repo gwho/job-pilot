@@ -7,10 +7,11 @@
 - `lib/auth.ts` — `getCtaHref()` helper, returns `/dashboard` or `/login` based on current session.
 - `app/actions/auth.ts` — `signInWithGoogle()` / `signInWithGithub()` Server Actions. Each starts the PKCE OAuth flow via `createAuthActions().signInWithOAuth()`, stores the code verifier in an httpOnly cookie, and redirects to the provider.
 - `app/(auth)/login/page.tsx` — login page with two OAuth buttons, each backed by a Server Action via a plain `<form action={...}>`.
-- `app/api/auth/callback/route.ts` — exchanges the OAuth code + verifier for a session via `exchangeOAuthCode()`, redirects to `/dashboard` on success or `/login?error=oauth` on failure.
+- `app/(auth)/login/page.tsx` — shows a friendly inline error when OAuth returns to `/login?error=oauth`.
+- `app/api/auth/callback/route.ts` — exchanges the OAuth code + verifier for a session via `exchangeOAuthCode()`, writes auth cookies to the outgoing redirect response, redirects to `/dashboard` on success or `/login?error=oauth` on failure.
 - `app/api/auth/refresh/route.ts` — `createRefreshAuthRouter()`, a prebuilt refresh endpoint.
-- `app/api/auth/sign-out/route.ts` — clears auth cookies via `createAuthActions().signOut()`.
-- `proxy.ts` (project root) — refreshes the session via `updateSession()` and redirects unauthenticated requests away from `/dashboard`, `/profile`, `/find-jobs`.
+- `app/api/auth/sign-out/route.ts` — clears auth cookies on the outgoing JSON response via `createAuthActions().signOut()`.
+- `proxy.ts` (project root) — refreshes the session via `updateSession()`, uses the refreshed access-token result for auth decisions, and redirects unauthenticated requests away from `/dashboard`, `/profile`, `/find-jobs`.
 - Homepage CTAs (`Navbar`, `Hero`, `BottomCTA`) now resolve to `/login` or `/dashboard` based on session state via `getCtaHref()`.
 - `.env.local` created with `NEXT_PUBLIC_INSFORGE_URL`, `NEXT_PUBLIC_INSFORGE_ANON_KEY` (fetched live via the InsForge MCP `get-anon-key` tool), and `NEXT_PUBLIC_APP_URL`.
 
@@ -29,6 +30,10 @@ The project's own `context/architecture.md` and `context/library-docs.md` descri
 - `/api/auth/refresh` with no session correctly returns 401.
 - `/api/auth/sign-out` returns 200.
 - Full click-through with real Google/GitHub consent screens was not scripted — that requires real account credentials and human interaction with a third-party consent UI, which isn't something to automate. This step should be manually verified once.
+
+## Completion pass
+
+`docs/diff/02-auth/README.md` later found that the Route Handler cookie writers and proxy auth decision needed tightening. The completion pass is documented in `docs/plan/02-auth-completion/` and corrected the callback cookie writer, API sign-out cookie writer, refreshed-session proxy check, and login error display.
 
 ## Not done / deferred
 
