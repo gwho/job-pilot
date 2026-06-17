@@ -158,6 +158,7 @@ export async function saveProfile(formData: ProfileFormData) {
 - Every Server Action returns `{ success: boolean, error?: string }`
 - Always call `revalidatePath` after mutations that affect page data
 - Never throw from Server Actions — always return the error
+- **Exception — auth redirect actions**: `signInWithGoogle`, `signInWithGithub`, `signOut` in `app/actions/auth.ts` call `redirect()` instead of returning. `redirect()` throws a special Next.js error internally and cannot coexist with a return value. These are navigation actions, not data mutations — they are the approved exception to the return pattern above.
 
 ---
 
@@ -230,12 +231,14 @@ All PostHog events must use these exact event names. Never invent new event name
 
 | Event                | When                                       | Key Properties             |
 | -------------------- | ------------------------------------------ | -------------------------- |
+| `user_signed_in`     | OAuth sign-in completed successfully       | email                      |
+| `user_signed_out`    | User session cleared                       | —                          |
 | `job_search_started` | Find Jobs button clicked                   | userId, jobTitle, location |
 | `job_found`          | Each job discovered and saved              | userId, source, matchScore |
 | `profile_completed`  | User saves complete profile for first time | userId                     |
 | `company_researched` | Company research dossier generated         | userId, jobId, company     |
 
-These four events are the only events in this project. Do not add more without updating this list first.
+These six events are the only events in this project. Do not add more without updating this list first.
 
 `job_found` powers the Jobs Found Over Time and Match Score Distribution dashboard charts.
 `company_researched` powers the Company Research Activity dashboard chart.
@@ -257,8 +260,8 @@ All environment variables defined in `.env.local` for development. Never hardcod
 | `OPENAI_API_KEY`                | agent/ functions       |
 | `ADZUNA_APP_ID`                 | lib/adzuna.ts          |
 | `ADZUNA_APP_KEY`                | lib/adzuna.ts          |
-| `NEXT_PUBLIC_POSTHOG_KEY`       | lib/posthog-client.ts  |
-| `NEXT_PUBLIC_POSTHOG_HOST`      | lib/posthog-client.ts  |
+| `NEXT_PUBLIC_POSTHOG_KEY`       | instrumentation-client.ts, lib/posthog-server.ts |
+| `NEXT_PUBLIC_POSTHOG_HOST`      | instrumentation-client.ts, lib/posthog-server.ts |
 
 `NEXT_PUBLIC_` prefix means the variable is exposed to the browser. Never add `NEXT_PUBLIC_` to secret keys.
 
