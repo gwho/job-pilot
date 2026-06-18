@@ -215,6 +215,19 @@ const auth = createAuthActions({ cookies: await cookies() });
 
 ---
 
+## InsForge Schema & Infrastructure Changes
+
+Before running any DDL (`CREATE TABLE`, `ALTER TABLE`, `DROP`) or infrastructure operations (`create-bucket`, `create-function`) via the InsForge MCP tools, always call `get-backend-metadata` first.
+
+```
+Step 1 — mcp__insforge__get-backend-metadata   ← confirm connectivity and correct project
+Step 2 — mcp__insforge__run-raw-sql / create-bucket / etc.
+```
+
+**Why this is required:** Successful MCP tool calls implicitly confirm connectivity, but they do not confirm you are targeting the intended project. A misconfigured backend URL silently routes DDL to the wrong InsForge project — the call succeeds, the table appears created, and the bug surfaces later when the app cannot find the table. `get-backend-metadata` makes the project identity explicit before any state-changing operation. This step was identified as an oversight in Feature 04 and is now standard for all future schema and infrastructure work.
+
+---
+
 ## Error Handling
 
 - Never use empty catch blocks — always log or handle
