@@ -38,7 +38,24 @@ Last updated: 2026-06-15
 | Accent usage     | `hover:text-accent` (nav hover), `bg-overlay text-white` (CTA — uses dark overlay, not accent purple) |
 
 **Pattern notes:**
-The navbar CTA uses `bg-overlay` (near-black), not `bg-accent` (purple). This is intentional — the primary accent is reserved for in-page CTAs. Nav CTA should always be dark. Active nav items (future feature) use `text-accent` per ui-rules.md.
+The navbar CTA uses `bg-overlay` (near-black), not `bg-accent` (purple). This is intentional — the primary accent is reserved for in-page CTAs. Nav CTA should always be dark. Active nav state is handled by `NavLinks.tsx` (see below) — Navbar stays a Server Component; NavLinks is the thin client component that calls `usePathname()`.
+
+---
+
+### NavLinks
+
+File: `components/layout/NavLinks.tsx`
+Last updated: 2026-06-18
+
+| Property         | Class                                               |
+| ---------------- | --------------------------------------------------- |
+| Active link      | `text-accent`                                       |
+| Inactive link    | `text-text-dark hover:text-accent transition-colors` |
+| Spacing          | `flex items-center gap-8`                           |
+| Font             | `text-sm font-medium`                               |
+
+**Pattern notes:**
+Client-only component that renders the three nav links using `usePathname()` for active state detection. Kept separate from `Navbar` so the Navbar can remain an async Server Component. Active detection: `pathname === href || pathname.startsWith(href + '/')` — the `startsWith` catches sub-routes (e.g. `/find-jobs/123` activates "Find Jobs"). No underline on active state — color change only.
 
 ---
 
@@ -261,6 +278,72 @@ Last updated: 2026-06-17
 
 **Pattern notes:**
 Same visual contract as `SignOutButton`; split into a client component solely because PostHog browser identity reset requires a click handler.
+
+---
+
+### ProfileForm
+
+File: `components/profile/ProfileForm.tsx`
+Last updated: 2026-06-18
+
+| Property              | Class / Value                                                                        |
+| --------------------- | ------------------------------------------------------------------------------------ |
+| Page wrapper          | `max-w-[800px] mx-auto py-8 px-6 space-y-6`                                          |
+| Card                  | `bg-surface border border-border rounded-2xl p-6 shadow-sm`                          |
+| Section divider       | `<hr className="border-border" />`                                                   |
+| Section heading       | `text-sm font-semibold text-text-dark mb-4`                                          |
+| Card heading          | `text-base font-semibold text-text-primary mb-1`                                     |
+| Card subtext          | `text-sm text-text-secondary mb-4` or `mb-6`                                        |
+| Input (standard)      | `w-full bg-surface border border-border rounded-md px-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-1 focus:ring-accent` |
+| Input (disabled)      | `w-full bg-surface-secondary border border-border rounded-md px-3 py-2 text-sm text-text-muted cursor-not-allowed` |
+| Upload zone           | `border-2 border-dashed border-border rounded-xl p-8 flex flex-col items-center gap-2 bg-surface-secondary` |
+| Tag chip              | `bg-accent-light text-accent text-xs font-medium px-2.5 py-1 rounded-full flex items-center gap-1` |
+| Missing field pill    | `bg-warning-light text-warning text-xs font-medium px-2.5 py-1 rounded-full` (no × button) |
+| Work entry card       | `border border-border rounded-xl p-4 space-y-4`                                      |
+| Save button (primary) | `w-full bg-accent text-accent-foreground font-medium rounded-md px-4 py-2.5 text-sm hover:bg-accent-dark transition-colors` |
+| Secondary button      | `bg-surface border border-border text-text-primary text-sm font-medium rounded-md px-4 py-2 hover:bg-surface-secondary transition-colors` |
+
+**Pattern notes:**
+Single `"use client"` component; all state lives here. Uses `useMemo` for `completionPercentage` and `missingFields` — never store these in `useState`. The completion banner card is **always rendered** — not conditional. When `missingFields.length === 0` it shows a "Profile complete" state (`CheckCircle`, `text-success`); when incomplete it shows "Profile needs attention" (`AlertCircle`, `text-warning`) with orange pills. Dropdown `FormState` fields use `ExperienceLevel | ''` etc. (not `null`) because HTML select value must be a string. The SVG ring uses `r=40` on a `100×100` viewBox with `style={{ stroke: 'var(--color-accent)' }}` (not a Tailwind class). `TagInput` is declared at module scope outside the component function — never define a React component inside another component's render path. Upload zone uses `bg-surface-secondary` (neutral grey) — not `bg-surface-muted` (blue-tinted). Missing field pills use `bg-warning-light text-warning` (orange) — not `bg-accent-light text-accent` (purple).
+
+---
+
+### ConnectedAccounts (inert)
+
+File: `components/profile/ProfileForm.tsx` (inline JSX block, not extracted)
+Last updated: 2026-06-18
+
+| Property             | Class / Value                                                                 |
+| -------------------- | ----------------------------------------------------------------------------- |
+| Card                 | `bg-surface border border-border rounded-2xl p-6 shadow-sm`                  |
+| LinkedIn logo badge  | `w-10 h-10 rounded-lg bg-linkedin flex items-center justify-center shrink-0` |
+| LinkedIn logo text   | `text-linkedin-foreground text-sm font-bold`                                  |
+| Account name         | `text-sm font-medium text-text-primary`                                       |
+| Connection status    | `text-xs text-text-muted`                                                     |
+| Connect button       | `bg-accent text-accent-foreground text-sm font-medium rounded-md px-4 py-2 hover:bg-accent-dark transition-colors` |
+
+**Pattern notes:**
+Inert UI — "Connect LinkedIn" button does nothing in Feature 05. LinkedIn logo badge uses `bg-linkedin` + `text-linkedin-foreground` brand tokens (never generic blue). The `in` text is a placeholder for the actual LinkedIn SVG icon that will be wired in a future feature. Positioned between the completion banner and Resume card.
+
+---
+
+### TagInput
+
+File: `components/profile/ProfileForm.tsx` (module-level, not exported)
+Last updated: 2026-06-18
+
+| Property      | Class                                                                       |
+| ------------- | --------------------------------------------------------------------------- |
+| Label         | `text-sm font-medium text-text-dark mb-1.5`                                 |
+| Optional hint | `text-text-muted font-normal ml-1` (inline span inside label)               |
+| Chip list     | `flex flex-wrap gap-2 mb-2`                                                 |
+| Chip          | `bg-accent-light text-accent text-xs font-medium px-2.5 py-1 rounded-full flex items-center gap-1` |
+| × button      | `hover:text-accent-dark leading-none` + `aria-label="Remove {item}"`        |
+| Input row     | `flex gap-2`                                                                |
+| Add button    | `bg-surface border border-border text-text-primary text-sm font-medium rounded-md px-4 py-2 hover:bg-surface-secondary transition-colors whitespace-nowrap` |
+
+**Pattern notes:**
+Defined at module scope (not inside any component) to ensure React treats it as a stable component reference — see explanation.md §8. Accepts all data and handlers as props; no internal state. `onKeyDown` should call `e.preventDefault()` when Enter is pressed to prevent form submission.
 
 ---
 

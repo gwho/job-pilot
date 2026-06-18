@@ -7,6 +7,37 @@
 
 ---
 
+## How To Use An LLM Before This Tutorial
+
+Use a separate LLM session as a 10-minute warm-up before reading the real files. Ask for
+small isolated examples first, then come back to `app/globals.css` and `app/layout.tsx`
+to map those ideas onto JobPilot.
+
+Prompt 1:
+
+```text
+Teach me Tailwind v4 CSS-first configuration from scratch.
+Compare @theme in CSS with a Tailwind v3 tailwind.config.js file.
+Give me one tiny example where --color-accent generates bg-accent and text-accent.
+Then quiz me with 3 short questions.
+```
+
+Prompt 2:
+
+```text
+Explain CSS custom properties and the cascade using a font variable.
+Use this example: :root defines --font-sans, then an html class overrides --font-sans.
+Ask me to predict which value wins and why.
+```
+
+Practice before continuing:
+
+- Explain why JobPilot uses `bg-accent` instead of `bg-purple-500`.
+- Predict what happens if `inter.variable` is removed from `<html>`.
+- Say why design tokens belong in `app/globals.css`, not component class strings.
+
+---
+
 ## The Concept Architecture
 
 This diagram shows how design tokens are defined in the CSS layer, translated by the compiler, and combined with Next.js optimized fonts:

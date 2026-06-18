@@ -7,6 +7,43 @@
 
 ---
 
+## How To Use An LLM Before This Tutorial
+
+Before opening the homepage code, use an LLM to rehearse the concepts without JobPilot's
+specific components. Keep the session short and prediction-based.
+
+Prompt 1:
+
+```text
+Teach me the difference between app/layout.tsx and app/page.tsx in Next.js App Router.
+Use a small component tree example. Then ask me 3 questions about what persists during
+navigation and what changes.
+```
+
+Prompt 2:
+
+```text
+Explain React Server Components in plain language.
+When does a component need "use client", and when should it stay server-rendered?
+Give me examples using a static hero section and an interactive mobile menu.
+```
+
+Prompt 3:
+
+```text
+Teach me how a homepage is composed from section components.
+Explain why a page file should mostly assemble components rather than hold business
+logic. Then quiz me on import boundaries and named exports.
+```
+
+Practice before continuing:
+
+- Predict whether `Hero` needs `"use client"` if it only renders text, images, and links.
+- Explain why `app/page.tsx` has a default export but `Navbar` has a named export.
+- Sketch the homepage component tree from memory.
+
+---
+
 ## The Component Tree
 
 Every section of this tutorial maps back to this tree. Refer to it whenever you feel lost.

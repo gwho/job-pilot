@@ -7,6 +7,43 @@
 
 ---
 
+## How To Use An LLM Before This Tutorial
+
+Before studying the specific Grammarly-style warning, ask an LLM to teach the normal
+hydration lifecycle and then intentionally break it. The goal is to understand what
+React expects before looking at the fix.
+
+Prompt 1:
+
+```text
+Explain React hydration in a Next.js server-rendered page.
+Use a timeline: server HTML, browser parses DOM, React loads, event handlers attach.
+Then ask me what React compares during hydration.
+```
+
+Prompt 2:
+
+```text
+Teach me three common hydration mismatch causes: browser extensions, Date.now(), and
+window-dependent rendering. For each one, ask me whether it is external or an app bug.
+```
+
+Prompt 3:
+
+```text
+Explain suppressHydrationWarning.
+What does it suppress, how far down the tree does it apply, and why can it be dangerous
+if used broadly? Give me a small quiz.
+```
+
+Practice before continuing:
+
+- Explain why an extension-added `<body>` attribute can produce a warning.
+- Predict whether a child element mismatch is silenced by suppressing the parent.
+- Decide when a hydration warning should be fixed versus tolerated.
+
+---
+
 ## The Hydration Lifecycle Diagram
 
 This diagram shows how Next.js transitions from static HTML to an interactive React application, and how browser extensions can interfere:

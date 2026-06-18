@@ -27,6 +27,44 @@ code in this repo. Open these files as you go:
 
 ---
 
+## How To Use An LLM Before This Tutorial
+
+This tutorial is about subtle HTTP state flow. Before reading the code, ask an LLM to
+drill the difference between reading cookies, writing cookies, and trusting refreshed
+session results.
+
+Prompt 1:
+
+```text
+Teach me request cookies vs response cookies using login and logout.
+Use an OAuth callback as the main example. Ask me to predict which cookie object the SDK
+must write to.
+```
+
+Prompt 2:
+
+```text
+Explain a Next.js Route Handler that creates a redirect response, passes
+response.cookies to an auth SDK, and returns that same response. Why does the order
+matter? Quiz me on what breaks if request.cookies is used as the writer.
+```
+
+Prompt 3:
+
+```text
+Teach me session refresh in middleware/proxy.
+If updateSession returns a fresh accessToken, why should route protection trust that
+result instead of the original request cookie?
+```
+
+Practice before continuing:
+
+- Explain why login and logout are response-cookie operations.
+- Predict what happens if a redirect response does not carry `Set-Cookie`.
+- Explain why a proxy that mutates one response but returns another can lose cookies.
+
+---
+
 ## The Completion Pass In One Diagram
 
 The first auth build had the right major pieces: login buttons, OAuth Server Actions,

@@ -20,6 +20,43 @@ and the real code currently in this repo. Keep these files open while you work t
 
 ---
 
+## How To Use An LLM Before This Tutorial
+
+Before reading the review, use an LLM to practice separating "the symptom is gone" from
+"the feature is product-ready." This tutorial is about review discipline as much as code.
+
+Prompt 1:
+
+```text
+Teach me a three-layer code review model: plan alignment, system integrity, and
+production readiness. Use a placeholder dashboard page as the example. Then ask me to
+classify five findings by layer.
+```
+
+Prompt 2:
+
+```text
+Explain why a page that no longer returns 404 can still be incomplete.
+Use navigation, empty states, and sign-out as examples. Ask me to find the user-flow
+gap in each example.
+```
+
+Prompt 3:
+
+```text
+Teach me when repeated JSX should become a shared component.
+Use three placeholder pages with the same card but different title text.
+Ask me what props are healthy and what props would over-generalize the component.
+```
+
+Practice before continuing:
+
+- List the difference between a route existing and a route being usable.
+- Explain why protected placeholder pages still need navigation.
+- Decide whether "sign out" is a logical CTA on an unfinished authenticated page.
+
+---
+
 ## The Review Story
 
 The earlier recovery work had one job: stop authenticated users from landing on 404s

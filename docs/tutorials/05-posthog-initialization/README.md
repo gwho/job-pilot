@@ -7,6 +7,43 @@
 
 ---
 
+## How To Use An LLM Before This Tutorial
+
+Analytics has two separate problems: event taxonomy and reliable delivery. Use an LLM
+to rehearse both before reading the PostHog code.
+
+Prompt 1:
+
+```text
+Teach me the difference between browser analytics and server-side analytics in a
+Next.js app. Use sign-in and sign-out events as examples. Ask me which side should
+capture each event and why.
+```
+
+Prompt 2:
+
+```text
+Explain why serverless analytics clients need explicit flushing or shutdown.
+Use a route handler that returns quickly. Ask me what happens to queued events if the
+function ends before the queue flushes.
+```
+
+Prompt 3:
+
+```text
+Teach me type-safe analytics event names in TypeScript.
+Use a string union for allowed events and show how it prevents dashboard clutter.
+Then quiz me on valid vs invalid event names.
+```
+
+Practice before continuing:
+
+- Explain why `user_signed_in` belongs after OAuth callback success.
+- Predict why `posthog.shutdown()` appears in a `finally` block.
+- Say why event names should be constrained instead of arbitrary strings.
+
+---
+
 ## The Analytics Architecture
 
 Modern Next.js apps require two instances of analytics clients to capture the full lifecycle:

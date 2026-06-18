@@ -89,6 +89,7 @@ className="bg-purple-500 text-gray-600"
   /* Warning — orange */
   --color-warning: #ff8904;
   --color-warning-foreground: #ffffff;
+  --color-warning-light: #fff3e0;
 
   /* Error — red */
   --color-error: #ef4444;
@@ -185,6 +186,14 @@ Match score bars and indicators use gradient stops based on score range:
 | Tailored   | `bg-accent-light`      | `text-accent`             |
 | High Match | `bg-success-lightest`  | `text-success-foreground` |
 | Low Match  | `bg-surface-secondary` | `text-text-secondary`     |
+
+### Warning / Attention Pills
+
+Used in the Profile completion banner when fields are missing.
+
+| Pill type       | Background          | Text            |
+| --------------- | ------------------- | --------------- |
+| Missing field   | `bg-warning-light`  | `text-warning`  |
 
 ---
 
