@@ -1,68 +1,61 @@
-# Memory — Feature 04 Database Schema + Architect Session
+# Memory — Feature 05 Profile Page — Full UI
 
-Last updated: 2026-06-18
+Last updated: 2026-06-21
 
 ## What was built
 
-### Infrastructure (InsForge MCP tools)
-- Four tables created via `run-raw-sql`: `profiles`, `agent_runs`, `jobs`, `agent_logs`
-- `updated_at` trigger (`set_updated_at` function + `profiles_updated_at` trigger) on `profiles`
-- 6 performance indexes: `idx_jobs_user_id`, `idx_jobs_user_found_at`, `idx_jobs_user_match_score`, `idx_agent_logs_user_id`, `idx_agent_logs_run_id`, `idx_agent_runs_user_id`
-- 16 RLS policies — SELECT/INSERT/UPDATE/DELETE on all four tables, scoped to `auth.uid()`
-- Private `resumes` storage bucket created via `create-bucket`
-- All tables verified via `get-table-schema`; bucket confirmed via `list-buckets`
-
-### Files created or modified
-- `scripts/schema.sql` — full DDL reference (tables, trigger, indexes, RLS)
-- `types/index.ts` — canonical TypeScript interfaces for all four tables, including literal union types (`ExperienceLevel`, `JobSource`, `AgentRunStatus`, etc.), JSONB sub-types (`WorkExperienceEntry`, `Education`, `CompanyResearchDossier`), and `Insert` variants
-- `docs/architect/04-database-schema/discussion.md` — comprehensive record of all architect session decisions and topics (RLS + index performance, shared PK vs surrogate key, migration files vs direct SQL, TypeScript type generation vs manual)
-- `docs/architect/04-database-schema/ai-discussion-topics.md` — 25 AI discussion prompts
-- `docs/plan/04-database-schema/plan.md`, `explanation.md`, `ai-discussion-topics.md`
-- `context/progress-tracker.md` — Feature 04 marked complete, next set to Feature 05
-- `context/code-standards.md` — new "InsForge Schema & Infrastructure Changes" section added
+- `components/profile/ProfileForm.tsx` — single `"use client"` component (~1070 lines) owning all profile state: completion ring, tag inputs, work experience rows, education, job preferences. No state lift; all derived values (`completionPercentage`, `missingFields`) computed via `useMemo`.
+- `components/layout/NavLinks.tsx` — extracted as a standalone thin client component so `Navbar.tsx` stays a Server Component (it calls `getCtaHref()` which needs async server auth).
+- `app/profile/page.tsx` — updated to render `ProfileForm`.
+- `app/globals.css` — one new token line added.
+- `context/ui-tokens.md` — new tokens for profile page.
+- `context/ui-registry.md` — updated with profile page patterns.
+- `context/progress-tracker.md` — Feature 05 marked complete, next set to Feature 06.
+- `docs/plan/05-profile-page/plan.md`, `explanation.md`, `ai-discussion-topics.md` — feature learning docs.
+- `docs/architect/05-profile-page/decisions.md`, `discussion.md` — architect session record.
+- `docs/project-review/05-profile-page-polish/` — project review docs.
+- Multiple tutorial READMEs added under `docs/tutorials/`.
+- `lucide-react` added to `package.json`.
 
 ## Decisions made
 
-- **profiles.id = auth UUID**: Shared primary key — profiles.id is the same UUID as auth.users.id. RLS uses `id = auth.uid()`, not `user_id = auth.uid()`. All other tables use `user_id = auth.uid()`.
-- **Profile row created on first save (Feature 06)**: upsert via `ON CONFLICT (id) DO UPDATE`. Not auto-created in OAuth callback. RLS INSERT policy allows `auth.uid() = id`.
-- **DB-level `updated_at` trigger**: `BEFORE UPDATE` trigger on `profiles` — application code never needs to set `updated_at` manually.
-- **Schema via MCP tools, not migrations**: `scripts/schema.sql` is documentation only. Known trade-off: future ALTER TABLE changes must be manually reflected in the file. Migration tooling deferred until second environment or developer is needed.
-- **Manual TypeScript types**: `types/index.ts` written manually, anchored to live `get-table-schema` output. Includes literal union types for constrained columns and Insert variants.
-- **Indexes added at creation time**: Composite indexes on `(user_id, found_at DESC)` and `(user_id, match_score DESC)` on jobs cover RLS filter + sort in a single scan for Features 11 and 16.
-- **`get-backend-metadata` before any schema work**: Now a required first step before DDL or infrastructure changes (added to `code-standards.md`). Was an oversight in Feature 04 — made standard going forward.
+- **Single `"use client"` ProfileForm**: All profile state lives in one component. No state lift needed at this stage — avoids prop drilling for a form this large.
+- **`FormState` uses union types with `''` for dropdowns**: `ExperienceLevel | ''` (and similar) required because HTML `<select>` value must be a string, not `null`. Without this TypeScript rejects controlled select components.
+- **Mock data typed as `Profile` at declaration**: Structural type safety catches mismatches at the callsite rather than at render time.
+- **`TagInput` declared at module scope**: Defining a component inside a render function causes React to treat it as a new type on every render, triggering unnecessary unmount/remount (caught by `react-hooks/static-components` ESLint rule). Declared at module top level instead.
+- **NavLinks extracted for server/client boundary**: `Navbar` needs async server-only `getCtaHref()`. `NavLinks` needs `"use client"` for active-link state. Splitting preserves both requirements without making Navbar a client component.
+- **`linkedin_connected` and `is_tailored` columns added to `profiles`**: Previously absent from `context/architecture.md` but confirmed needed. Added as booleans (`is_tailored DEFAULT false`).
 
 ## Problems solved
 
-- Identified two schema discrepancies vs another AI tool's plan: `linkedin_connected` and `is_tailored DEFAULT false` columns are not in `context/architecture.md`. Decided to follow architecture.md — those columns were not added.
-- Identified missing `handle_new_user` trigger (auto-create profile on auth.users INSERT) in comparison plan. Our approach (upsert on first save) is a deliberate decision from the architect session — not an oversight.
-- Missing `get-backend-metadata` connectivity check was an oversight, not intentional — now documented as a required step in `code-standards.md`.
+- `react-hooks/static-components` lint error: caused by `TagInput` defined inside `ProfileForm`'s function body. Fixed by hoisting to module scope.
+- Server/client boundary conflict in `Navbar`: extracting `NavLinks` as a dedicated client component resolved it cleanly.
 
 ## Current state
 
-All verification passing:
-- `get-table-schema` confirmed all four tables: correct columns, indexes, RLS policies, and trigger
-- `list-buckets` confirmed `resumes` bucket (private)
-- `npx tsc --noEmit` — clean
-- `npm run lint` — clean
-
-Feature 04 is fully complete. Phase 1 Foundation is done (01 Homepage, 02 Auth, 03 PostHog, 04 Database Schema).
-
-Git status: new and modified files not yet committed.
+- Feature 05 fully complete and committed (`f06bad5`).
+- `context/ui-registry.md` local change committed in wrap-up commit this session.
+- `app/practice-01/` tracked and committed (confirmed keeper).
+- `profiles` table now has `linkedin_connected` and `is_tailored` columns (added this session).
+- Google and GitHub OAuth providers fully configured in InsForge for `http://localhost:3000`.
+- Profile page renders with mock data at `http://localhost:3000/profile` — no save logic yet.
+- Phase 2 is now active. Phase 1 Foundation is fully complete.
 
 ## Next session starts with
 
-Begin **Feature 05: Profile Page — Full UI**.
+Begin **Feature 06: Profile Save Logic**.
 
-Per build plan: build the complete profile page UI with mock data first. No save logic yet. Key sections:
-- Profile needs attention banner (completion percentage ring, missing field tags)
-- Resume upload area
-- Profile Information form (Personal Info, Professional Info, Work Experience ×3, Education, Job Preferences)
-- Save Profile button
+Key steps:
+- Create `actions/profile.ts` with a `saveProfile` Server Action
+- Use `createInsforgeServer()` — never the browser client
+- Upsert on `profiles.id = auth.uid()` (shared PK pattern from Feature 04)
+- `linkedin_connected` and `is_tailored` are now real columns — include them in the upsert
+- Call `revalidatePath('/profile')` after successful write
+- Fire `profile_completed` PostHog event on first-time save (check if row previously existed)
+- Connect the Server Action to `ProfileForm`'s save button
 
-Run `/architect feature 05` before starting to think through the UI decisions. Then build the page with mock data and verify visually at `http://localhost:3000/profile`.
+Run `/architect feature 06` before starting if save logic decisions feel uncertain.
 
 ## Open questions
 
-- Should `linkedin_connected` and `is_tailored` columns be added to the schema? They appear in another AI tool's plan but are absent from `context/architecture.md`. Needs a decision before those features are built.
-- Are Google and GitHub OAuth providers fully configured in InsForge for `http://localhost:3000`? Manual OAuth smoke test still not done.
-- Should production PostHog `/ingest` rewrite be verified before Feature 05, or deferred to pre-launch?
+None — all open questions from Feature 04 resolved this session.

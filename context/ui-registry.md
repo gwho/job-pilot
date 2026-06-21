@@ -286,22 +286,25 @@ Same visual contract as `SignOutButton`; split into a client component solely be
 File: `components/profile/ProfileForm.tsx`
 Last updated: 2026-06-18
 
-| Property              | Class / Value                                                                        |
-| --------------------- | ------------------------------------------------------------------------------------ |
-| Page wrapper          | `max-w-[800px] mx-auto py-8 px-6 space-y-6`                                          |
-| Card                  | `bg-surface border border-border rounded-2xl p-6 shadow-sm`                          |
-| Section divider       | `<hr className="border-border" />`                                                   |
-| Section heading       | `text-sm font-semibold text-text-dark mb-4`                                          |
-| Card heading          | `text-base font-semibold text-text-primary mb-1`                                     |
-| Card subtext          | `text-sm text-text-secondary mb-4` or `mb-6`                                        |
-| Input (standard)      | `w-full bg-surface border border-border rounded-md px-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-1 focus:ring-accent` |
-| Input (disabled)      | `w-full bg-surface-secondary border border-border rounded-md px-3 py-2 text-sm text-text-muted cursor-not-allowed` |
-| Upload zone           | `border-2 border-dashed border-border rounded-xl p-8 flex flex-col items-center gap-2 bg-surface-secondary` |
-| Tag chip              | `bg-accent-light text-accent text-xs font-medium px-2.5 py-1 rounded-full flex items-center gap-1` |
-| Missing field pill    | `bg-warning-light text-warning text-xs font-medium px-2.5 py-1 rounded-full` (no × button) |
-| Work entry card       | `border border-border rounded-xl p-4 space-y-4`                                      |
-| Save button (primary) | `w-full bg-accent text-accent-foreground font-medium rounded-md px-4 py-2.5 text-sm hover:bg-accent-dark transition-colors` |
-| Secondary button      | `bg-surface border border-border text-text-primary text-sm font-medium rounded-md px-4 py-2 hover:bg-surface-secondary transition-colors` |
+| Property                    | Class / Value                                                                        |
+| --------------------------- | ------------------------------------------------------------------------------------ |
+| Page wrapper                | `max-w-[800px] mx-auto py-8 px-6 space-y-6`                                          |
+| Card                        | `bg-surface border border-border rounded-2xl p-6 shadow-sm`                          |
+| Section divider             | `<hr className="border-border" />`                                                   |
+| Section heading             | `text-sm font-semibold text-text-dark mb-4`                                          |
+| Card heading                | `text-base font-semibold text-text-primary mb-1`                                     |
+| Card subtext                | `text-sm text-text-secondary mb-4` or `mb-6`                                        |
+| Banner icon (complete)      | `CheckCircle size={18} className="text-success flex-shrink-0"`                       |
+| Banner icon (incomplete)    | `AlertCircle size={18} className="text-warning flex-shrink-0"`                       |
+| Ring percentage label       | `text-lg font-semibold text-text-primary` (absolute-centered over SVG)               |
+| Input (standard)            | `w-full bg-surface border border-border rounded-md px-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-1 focus:ring-accent` |
+| Input (disabled)            | `w-full bg-surface-secondary border border-border rounded-md px-3 py-2 text-sm text-text-muted cursor-not-allowed` |
+| Upload zone                 | `border-2 border-dashed border-border rounded-xl p-8 flex flex-col items-center gap-2 bg-surface-secondary` |
+| Tag chip                    | `bg-accent-light text-accent text-xs font-medium px-2.5 py-1 rounded-full flex items-center gap-1` |
+| Missing field pill          | `bg-warning-light text-warning text-xs font-medium px-2.5 py-1 rounded-full` (no × button) |
+| Work entry card             | `border border-border rounded-xl p-4 space-y-4`                                      |
+| Save button (primary)       | `w-full bg-accent text-accent-foreground font-medium rounded-md px-4 py-2.5 text-sm hover:bg-accent-dark transition-colors` |
+| Secondary button            | `bg-surface border border-border text-text-primary text-sm font-medium rounded-md px-4 py-2 hover:bg-surface-secondary transition-colors` |
 
 **Pattern notes:**
 Single `"use client"` component; all state lives here. Uses `useMemo` for `completionPercentage` and `missingFields` — never store these in `useState`. The completion banner card is **always rendered** — not conditional. When `missingFields.length === 0` it shows a "Profile complete" state (`CheckCircle`, `text-success`); when incomplete it shows "Profile needs attention" (`AlertCircle`, `text-warning`) with orange pills. Dropdown `FormState` fields use `ExperienceLevel | ''` etc. (not `null`) because HTML select value must be a string. The SVG ring uses `r=40` on a `100×100` viewBox with `style={{ stroke: 'var(--color-accent)' }}` (not a Tailwind class). `TagInput` is declared at module scope outside the component function — never define a React component inside another component's render path. Upload zone uses `bg-surface-secondary` (neutral grey) — not `bg-surface-muted` (blue-tinted). Missing field pills use `bg-warning-light text-warning` (orange) — not `bg-accent-light text-accent` (purple).
@@ -316,7 +319,7 @@ Last updated: 2026-06-18
 | Property             | Class / Value                                                                 |
 | -------------------- | ----------------------------------------------------------------------------- |
 | Card                 | `bg-surface border border-border rounded-2xl p-6 shadow-sm`                  |
-| LinkedIn logo badge  | `w-10 h-10 rounded-lg bg-linkedin flex items-center justify-center shrink-0` |
+| LinkedIn logo badge  | `w-10 h-10 rounded-lg bg-linkedin flex items-center justify-center flex-shrink-0` |
 | LinkedIn logo text   | `text-linkedin-foreground text-sm font-bold`                                  |
 | Account name         | `text-sm font-medium text-text-primary`                                       |
 | Connection status    | `text-xs text-text-muted`                                                     |
