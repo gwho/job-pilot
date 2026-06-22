@@ -2,26 +2,25 @@
 
 ## Bundle Size Optimization
 
-Configure content sources for optimal purging:
+Tailwind v4 automatically detects template files with the Oxide engine. Use CSS-first `@source` directives only for files Tailwind would not otherwise scan, such as external component libraries:
 
-```javascript
-// tailwind.config.js
-export default {
-  content: [
-    "./index.html",
-    "./src/**/*.{js,ts,jsx,tsx,vue,svelte}",
-    "./node_modules/@mycompany/ui-lib/**/*.{js,ts,jsx,tsx}",
-  ],
-  // Enable JIT for faster builds
-  jit: true,
+```css
+/* app.css */
+@import "tailwindcss";
+
+@source "../node_modules/@mycompany/ui-lib";
+
+@theme {
+  --color-brand: oklch(0.62 0.18 260);
+  --font-mono: "Fira Code", monospace;
 }
 ```
 
-### Content Path Best Practices
+### Source Detection Best Practices
 
-1. **Be specific**: Don't use `"./**/*"` - it scans too many files
-2. **Include UI libraries**: Add paths to component libraries
-3. **Exclude tests**: Don't include test files in content paths
+1. **Rely on auto-detection**: Tailwind v4 discovers project templates without a `content` array
+2. **Add external sources explicitly**: Use `@source` for component libraries outside the app source tree
+3. **Keep sources narrow**: Point `@source` at the package or directory that actually contains classes
 
 ---
 
@@ -52,7 +51,7 @@ export default {
 
 @theme {
   /* Define once, use everywhere */
-  --color-brand: #3b82f6;
+  --color-brand: oklch(0.62 0.18 260);
   --font-mono: "Fira Code", monospace;
 }
 
@@ -68,52 +67,43 @@ export default {
 
 ## Production Build Optimization
 
-### PurgeCSS Configuration
+### Source Detection and Safelisting
 
-```javascript
-// tailwind.config.js
-module.exports = {
-  purge: {
-    enabled: process.env.NODE_ENV === 'production',
-    content: [
-      './src/**/*.html',
-      './src/**/*.jsx',
-      './src/**/*.tsx',
-    ],
-    options: {
-      safelist: [
-        'bg-red-500',
-        'text-center',
-        // Classes that shouldn't be purged
-      ],
-    },
-  },
+```css
+/* app.css */
+@import "tailwindcss";
+
+/* Optional: scan additional files that v4 auto-detection cannot see. */
+@source "../packages/ui";
+
+/* Optional: include dynamic classes that do not appear literally in templates. */
+@source inline("bg-brand text-center");
+
+@theme {
+  --color-brand: oklch(0.62 0.18 260);
 }
 ```
 
 ### Minification
 
-```bash
-# Use cssnano for minification
-npm install -D cssnano
+```css
+/* app.css */
+@import "tailwindcss";
 
-# In postcss.config.js
-module.exports = {
-  plugins: [
-    require('tailwindcss'),
-    require('autoprefixer'),
-    ...(process.env.NODE_ENV === 'production' ? [require('cssnano')] : []),
-  ],
+@theme {
+  --spacing-card: 1.5rem;
 }
 ```
+
+Tailwind v4 production builds are optimized by the Tailwind CLI or framework integration. Avoid adding legacy `tailwindcss` and `autoprefixer` PostCSS plugin wiring unless a v3 project still requires it.
 
 ---
 
 ## Best Practices for Performance
 
-1. **Use the JIT engine**: Faster builds, smaller output
-2. **Configure content correctly**: Only include files that use Tailwind
+1. **Use v4 auto-detection**: JIT is built in and template discovery is automatic
+2. **Add `@source` only when needed**: Include external packages or dynamic class safelists explicitly
 3. **Minimize custom CSS**: Use Tailwind utilities over custom CSS
-4. **Enable purging in production**: Removes unused styles
-5. **Use `@layer` for custom styles**: Helps with organization and purging
+4. **Keep CSS-first configuration close to the app**: Define tokens with `@theme`
+5. **Use `@layer` for custom styles**: Helps with organization
 6. **Avoid `@apply` in components**: Prefer composing utilities in markup

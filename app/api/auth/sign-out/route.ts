@@ -24,7 +24,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       console.error("[api/auth/sign-out]", error);
       const errorResponse = NextResponse.json(
         { success: false, error: "Failed to sign out" },
-        { status: error.statusCode },
+        { status: error.statusCode ?? 500 },
       );
       response.cookies.getAll().forEach((cookie) => {
         errorResponse.cookies.set(cookie);
