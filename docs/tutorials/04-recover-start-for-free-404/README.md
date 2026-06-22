@@ -109,10 +109,46 @@ This case was classified as **Failure Mode 1**. From `docs/recover/start-for-fre
 
 **Checkpoint:** Why does "the auth logic matched the build-plan spec exactly" rule out
 Failure Mode 3, even though the symptom (404) looks just as broken as any other failure?
-(Answer: Mode 3 is about a *misunderstood requirement* — code that does the wrong thing
-on purpose because someone misread the spec. Here the spec said "redirect to `/dashboard`
-when logged in," and the code did exactly that. The thing that didn't exist was the page
-on the other end of that redirect — a missing *implementation*, not a wrong *design*.)
+
+<details>
+<summary>Reveal answer</summary>
+
+Mode 3 is about a *misunderstood requirement* — code that does the wrong thing on purpose
+because someone misread the spec. Here the spec said "redirect to `/dashboard` when logged
+in," and the code did exactly that. The thing that didn't exist was the page on the other
+end of that redirect — a missing *implementation*, not a wrong *design*. Fixing Mode 3
+requires rethinking the approach; fixing a missing page requires adding a file.
+
+</details>
+
+**Checkpoint:** This 404 had no error stack trace — just "page could not be found." What
+specific signs pointed toward Mode 1 rather than Mode 3 in a symptom that gives you no
+stack trace to read?
+
+<details>
+<summary>Reveal answer</summary>
+
+Without a stack trace, classification comes from two things:
+
+**Scope check:** Everything else worked — the homepage rendered, auth succeeded, `getCtaHref()` ran and returned a string. The problem was isolated to one broken destination, not a systemic breakdown. Mode 2 requires stacked failed attempts (there were none); Mode 3 requires a wrong design decision (the redirect logic was correct by the spec).
+
+**Code read:** `getCtaHref()` was readable and obviously correct — `data.user ? "/dashboard" : "/login"` matches the spec exactly. The only open question was "does `/dashboard` exist" — a factual question with a one-file answer.
+
+When a symptom has no stack trace, the classification falls back to: does the code do what it was supposed to do? If yes and the problem is isolated, Mode 1. If yes but the surrounding system doesn't exist yet, Mode 1 with a forward-reference cause.
+
+</details>
+
+**Checkpoint:** What's the one-sentence test for distinguishing Mode 1 from Mode 2, without any other information about the bug?
+
+<details>
+<summary>Reveal answer</summary>
+
+Mode 1 is the first attempt at fixing an isolated symptom. Mode 2 requires *multiple
+prior, stacked* fix attempts that made the situation progressively murkier or worse — if
+there's no history of failed attempts compounding, it can't be Mode 2, regardless of how
+broken the current symptom looks.
+
+</details>
 
 **Try it yourself:** Open `docs/recover/start-for-free-404/explanation.md` §1 in full
 and write, in your own words, one sentence each for what evidence would have pointed to
@@ -143,13 +179,50 @@ Features 01–02 (homepage, auth) were complete. The link pointed at a real futu
 destination that hadn't been built. That's not a bug; it's the expected shape of any app
 built in phases, the moment you wire up navigation before every destination exists.
 
-**Checkpoint:** If you were building a 10-phase app and Phase 1 already linked to
-`/settings`, `/billing`, and `/team` — none of which exist yet — would each of those
-produce a "Failure Mode 1" 404 in the same sense as this one? (Answer: structurally yes,
-*if* each is independently isolated and a first attempt. But a competent build plan
-usually avoids exposing those links in the UI before the page exists at all — which is
-exactly the gap the follow-up review in Part 4 caught here: the *redirect logic* being
-correct didn't mean the *user experience* around it was complete.)
+**Checkpoint:** Why does a phased build plan inherently create temporary 404s? What's
+the general strategy for handling routes that point at not-yet-built features without it
+looking like a bug to users?
+
+<details>
+<summary>Reveal answer</summary>
+
+Any navigation element — a nav link, a CTA, a redirect — that points at a feature from a
+later phase will 404 until that phase ships, because incremental builds wire up references
+before every destination exists. The moment you write `getCtaHref()` returning
+`"/dashboard"` in Phase 1, you've created a forward reference to Phase 5.
+
+The general strategy is a **stub page**: a minimal `page.tsx` that renders something
+meaningful (not just a 404) so the route resolves. The stub signals "this exists but isn't
+built yet" instead of "this is broken." As Part 4 covers, even stubs have quality bars —
+a blank render is better than a 404, but a render with your design system and a sign-out
+button is better still.
+
+</details>
+
+**Checkpoint:** The diagnosis explicitly says "this is not a bug in the auth logic." What
+would change about the fix if it *had* been a bug in `getCtaHref()` — say, it returned
+`"/dashbord"` (typo) instead of `"/dashboard"`?
+
+<details>
+<summary>Reveal answer</summary>
+
+The fix would target `lib/auth.ts` directly — correcting the string — rather than
+creating a new page. The *symptom* (404) would look identical, but the root cause is now
+the *function*, not the *destination*. This is still a Failure Mode 1 fix (isolated,
+first attempt, targeted change), but the file that changes is different.
+
+The diagnosis step that distinguishes them: reading `getCtaHref()` and confirming the
+redirect target matches the spec exactly. If the function returns `"/dashbord"` and the
+spec says `"/dashboard"`, fix the function. If the function is correct and the page
+doesn't exist, create the page. The function was read and confirmed correct — which
+moved the investigation to "does the target page exist."
+
+</details>
+
+**Try it yourself:** If you were building a 10-phase app and Phase 1 already linked to
+`/settings`, `/billing`, and `/team` — none of which exist yet — open `getCtaHref()` in
+`lib/auth.ts` and think through: would adding stubs for those routes be Failure Mode 1
+each time, or would it be Mode 3? What's the deciding factor?
 
 ---
 
@@ -194,13 +267,44 @@ cat node_modules/next/dist/docs/01-app/03-api-reference/03-file-conventions/prox
 That file states outright that `middleware` is the deprecated name and `proxy` is
 current — the same conclusion the `curl` test gave, from a completely different angle.
 
-**Checkpoint:** Why does "falsifiable and cheap to check" matter as a bar for deciding
-whether to verify a claim before acting on it? (Answer: not every claim is worth
-stopping to verify — but when a claim is both *specific* (makes a testable prediction:
-"this file never runs") and *cheap to test* (one `curl` command, one file read), the cost
-of checking is near zero compared to the cost of building a wrong fix on top of it. A
-vague or expensive-to-verify claim might reasonably get provisional trust; this one had
-no excuse not to be checked.)
+**Checkpoint:** What specifically made the `proxy.ts` claim falsifiable, and why is
+"falsifiable and cheap to check" a useful bar for deciding whether to verify a claim
+before acting on it?
+
+<details>
+<summary>Reveal answer</summary>
+
+The claim was **specific** and **made a testable prediction**: "`proxy.ts` never runs."
+If it never runs, then an unauthenticated request to a protected route would pass through
+to the page — not redirect to `/login`. That prediction is checkable in one `curl`
+command.
+
+"Falsifiable and cheap to check" matters because not every claim is worth verifying.
+A vague claim ("the auth might be slow") or an expensive-to-test one ("this fails only
+under concurrent load") reasonably gets provisional trust. But when a claim is specific
+enough to make a concrete prediction AND the cost of checking it is one command, the
+cost of *not* checking it is higher — you risk building an incorrect fix on a wrong
+premise. Here the test took 3 seconds and instantly ruled out an entire investigation
+branch.
+
+</details>
+
+**Checkpoint:** The claim was falsified twice — by a live `curl` test AND by a file read
+from `node_modules`. Why does using two independent methods matter, rather than stopping
+after the first confirms what you expected?
+
+<details>
+<summary>Reveal answer</summary>
+
+Two independent methods reaching the same conclusion means the result isn't an artifact
+of one method's assumptions. The `curl` test could theoretically be misread (maybe the
+307 came from somewhere else). The `node_modules` doc could theoretically be stale. But
+both reaching the same conclusion via entirely different paths — runtime behavior and
+source documentation — makes it very unlikely both are wrong in the same direction. This
+is the same principle as running both a test suite and a manual check: agreement between
+independent sources is stronger evidence than either alone.
+
+</details>
 
 **Try it yourself:** Reproduce both verification steps yourself right now:
 
@@ -316,14 +420,40 @@ Tutorial 02 — same Server Action wiring, reused for the opposite direction of 
 flow.
 
 **Checkpoint:** Why was this caught by a *separate* `/project-review` pass instead of
-during the original bug fix itself? (Answer, from the project's own
-`docs/recover/start-for-free-404/explanation.md`: "a fix focused on 'did the error go
-away' will not, by itself, ask 'does this match the rest of the system.' Both checks
-matter, but they're different checks, run at different times, for good reason —
-conflating them risks under-scoping the original fix while debugging is still in
-progress." In other words: while you're mid-diagnosis trying to stop a 404, that's the
-wrong moment to also audit design-system compliance — finish stopping the bleeding
-first, then review with fresh eyes.)
+during the original bug fix itself?
+
+<details>
+<summary>Reveal answer</summary>
+
+From `docs/recover/start-for-free-404/explanation.md`: "a fix focused on 'did the error
+go away' will not, by itself, ask 'does this match the rest of the system.' Both checks
+matter, but they're different checks, run at different times, for good reason — conflating
+them risks under-scoping the original fix while debugging is still in progress."
+
+While mid-diagnosis trying to stop a 404, that's the wrong moment to also audit
+design-system compliance — finish stopping the bleeding first, then review with fresh
+eyes. The two questions have different scopes, different reference material (the symptom
+vs. the design rules), and are best answered sequentially rather than simultaneously.
+
+</details>
+
+**Checkpoint:** The 404 and the missing Navbar/SignOutButton were both in the same three
+files. Were they the same bug?
+
+<details>
+<summary>Reveal answer</summary>
+
+No. The 404 was caused by the *route not existing at all* — no `page.tsx` for
+`/dashboard`. The header/sign-out issue was a *completeness* gap in the stub that got
+created to fix the 404. The route existed and rendered; it just didn't meet the app's own
+UI rules. Different root causes, different fixes, same files.
+
+This matters because it shows that "fixed" has at least two meanings in practice: "the
+reported symptom is gone" and "the system meets its own standards." The first fix
+addressed the first meaning. The project review addressed the second. Both are necessary;
+neither can substitute for the other.
+
+</details>
 
 **Try it yourself:** Run a live diff between "minimal stub" and "reviewed stub" by
 temporarily reverting one file and comparing:
@@ -358,65 +488,18 @@ Put it together as a single timeline, using only the real artifacts in this repo
 
 **Checkpoint:** Step 7 explicitly didn't change anything about step 4's diagnosis. Why
 is that a sign the original fix was scoped correctly, rather than a sign it was wrong?
-(Answer: the original diagnosis answered "why is this a 404," and that answer — a
-missing page for a not-yet-built feature — remained true and useful. The review in step
-6 answered a different question — "does this page meet the bar for a real page in this
-app" — which is additive, not corrective. A genuinely wrong diagnosis would have required
-*redoing* step 4, not just adding to step 7.)
-
----
-
-## Self-check quiz
 
 <details>
-<summary><strong>1. What's the one-sentence test for distinguishing Failure Mode 1 from Failure Mode 2?</strong></summary>
+<summary>Reveal answer</summary>
 
-Mode 1 is the first attempt at fixing an isolated symptom. Mode 2 requires *multiple
-prior, stacked* fix attempts that made the situation progressively murkier or worse —
-if there's no history of failed attempts compounding, it can't be Mode 2, regardless of
-how broken the current symptom looks.
-</details>
+The original diagnosis answered "why is this a 404," and that answer — a missing page for
+a not-yet-built feature — remained true and useful. The review in step 6 answered a
+different question — "does this page meet the bar for a real page in this app" — which is
+additive, not corrective. A genuinely wrong diagnosis would have required *redoing* step
+4, not just adding to step 7. Step 7 built on step 4 without contradicting it. That's
+the signal: when a second fix is additive rather than corrective, the first fix was right
+about what it claimed to fix.
 
-<details>
-<summary><strong>2. The 404 in this incident and the missing Navbar/SignOutButton in the follow-up review were both "the same three files." Were they the same bug?</strong></summary>
-
-No. The 404 was caused by the *route not existing at all* (no `page.tsx` for
-`/dashboard`). The header/sign-out issue was a *completeness* gap in the stub that got
-created to fix the 404 — the route existed and rendered, it just didn't meet the app's
-own UI rules. Different root causes, different fixes, same files.
-</details>
-
-<details>
-<summary><strong>3. Why was `curl -i http://localhost:3000/dashboard` while logged out enough to disprove the "proxy.ts never runs" claim?</strong></summary>
-
-A `307` redirect to `/login` can only happen if some server-side logic intercepted the
-request before the page rendered and decided "no valid session, redirect." `proxy.ts` is
-the only code in this app that does that for `/dashboard`. If `proxy.ts` were truly
-inert, the request would have fallen through to whatever the dashboard page itself
-returns (at the time, a 404, or after the fix, an unprotected page render) — not a
-redirect.
-</details>
-
-<details>
-<summary><strong>4. What would have changed about the fix if `getCtaHref()` actually had a bug — say, it returned `/dashbord` (typo) instead of `/dashboard`?</strong></summary>
-
-That would have been a Failure Mode 1 fix too (isolated, first attempt), but the fix
-itself would target `lib/auth.ts` directly — correcting the string — rather than
-creating new pages. The diagnosis explicitly ruled this out by reading the function and
-confirming the redirect target matched the spec exactly, which is why the investigation
-moved to "does the target page exist" instead.
-</details>
-
-<details>
-<summary><strong>5. Why does a phased build plan (Phase 1 through Phase 5) inherently produce temporary 404s, and is that itself a bug?</strong></summary>
-
-Any navigation element (a nav link, a CTA, a redirect) that points at a feature from a
-later phase will 404 until that phase ships, simply because incremental builds wire up
-references before every destination exists. It's not a bug in the sense of "wrong code"
-— it's an expected, temporary state of an app under active multi-phase construction. The
-real failure mode to watch for is *exposing* those forward references to real users
-before the corresponding page (even a stub) exists — which is exactly what the fix in
-Part 4 addressed.
 </details>
 
 ---
@@ -467,6 +550,8 @@ check first to confirm:
 
 ---
 
-For deeper, open-ended exploration, `docs/recover/start-for-free-404/ai-discussion-topics.md`
-has four prompts written for exactly this purpose — try answering each yourself first,
-then compare with an AI's take.
+For deeper exploration, `docs/recover/start-for-free-404/ai-discussion-topics.md` has
+four prompts covering failure-mode classification, falsifiable claims, phased-build 404s,
+and the difference between "auth bug" and "missing page." Feed them to an LLM *after*
+forming your own answer first — the gap between what you thought and what you learn is
+where understanding lands.

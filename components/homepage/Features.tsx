@@ -15,7 +15,7 @@ const features: Feature[] = [
     icon: "⚡",
     title: "Smart Scoring",
     description:
-      "GPT-4o scores every job 0–100 against your actual skills profile. See matched skills in green and gaps in orange before you even open the listing.",
+      "AI scores every job 0–100 against your actual skills profile. See matched skills in green and gaps in orange before you even open the listing.",
   },
   {
     icon: "🏢",

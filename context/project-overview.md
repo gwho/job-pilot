@@ -2,7 +2,7 @@
 
 ## About the Project
 
-JobPilot is a full stack AI-powered job hunting assistant. The user sets up their profile once, uploads their resume, and the agent automatically discovers relevant jobs from Adzuna — scoring each one against the user's profile using GPT-4o. For jobs they're interested in, the agent researches the company across their public web pages and builds a structured dossier — company overview, tech stack, culture, why the role exists, and interview prep. The user reviews everything and applies with one click.
+JobPilot is a full stack AI-powered job hunting assistant. The user sets up their profile once, uploads their resume, and the agent automatically discovers relevant jobs from Adzuna — scoring each one against the user's profile using Gemini. For jobs they're interested in, the agent researches the company across their public web pages and builds a structured dossier — company overview, tech stack, culture, why the role exists, and interview prep. The user reviews everything and applies with one click.
 
 The entire process is tracked on a dashboard with PostHog-powered analytics and a recent activity feed.
 
@@ -60,10 +60,10 @@ Full width layout on all pages. No sidebar.
 - User fills profile form — all standard resume fields
 - User uploads their existing resume PDF
 - Two options on upload:
-  - "Extract from Resume" → GPT-4o parses resume and auto-fills profile form fields
+  - "Extract from Resume" → Gemini parses resume and auto-fills profile form fields
   - "Skip" → resume stored as-is, profile unchanged
 - User can manually edit any profile field at any time
-- User can generate a clean professional PDF resume from their current profile data using GPT-4o
+- User can generate a clean professional PDF resume from their current profile data using Gemini
 
 ### Finding Jobs — Adzuna Discovery
 
@@ -71,13 +71,13 @@ Full width layout on all pages. No sidebar.
 - Enters job title and location
 - Clicks Find Jobs button
 - Agent calls Adzuna API with user's search criteria
-- GPT-4o scores each job 0-100 against user profile
+- Gemini scores each job 0-100 against user profile
 - Jobs appear in the job list below
 - After search completes a message shows: "Found 8 jobs and saved 4 strong matches"
 
 ### Job Matching
 
-- GPT-4o scores each job 0-100 against user profile
+- Gemini scores each job 0-100 against user profile
 - Returns: score, match reason, matched skills array, missing skills array
 - All jobs visible in Find Jobs page regardless of score
 - High scoring jobs visually highlighted
@@ -98,7 +98,7 @@ Full width layout on all pages. No sidebar.
   - Visual score indicator
   - Matched skills — green tags
   - Missing skills — red tags
-  - Match reason paragraph from GPT-4o
+  - Match reason paragraph from Gemini
 - Company Research section:
   - Empty state with Research Company button
   - After research: structured dossier showing company overview, tech stack, culture, why this role exists, interview prep talking points
@@ -111,9 +111,9 @@ Full width layout on all pages. No sidebar.
 - Single Browserbase session opens with Stagehand
 - Agent navigates to company homepage — extracts overview, nav links, tech mentions
 - Agent visits About, Blog, Engineering pages if they exist
-- GPT-4o synthesizes all extracted content into structured dossier
+- Gemini synthesizes all extracted content into structured dossier
 - Dossier displayed on job details page
-- If company site cannot be found — GPT-4o generates best dossier from company name and job description alone
+- If company site cannot be found — Gemini generates best dossier from company name and job description alone
 
 ### Dashboard
 
@@ -165,12 +165,12 @@ Full width layout on all pages. No sidebar.
 - InsForge authentication (Google + GitHub OAuth)
 - Redirect to dashboard after login
 - Profile form with all standard resume fields
-- Resume PDF upload with optional profile auto-fill via GPT-4o
-- Resume PDF generation from profile data using GPT-4o
+- Resume PDF upload with optional profile auto-fill via Gemini
+- Resume PDF generation from profile data using Gemini
 - Adzuna API job discovery — searches by title and location, category filtered to IT jobs
-- GPT-4o job matching with score, reason, matched skills, missing skills
+- Gemini job matching with score, reason, matched skills, missing skills
 - Job details page with full structured description
-- Company Research Agent — single Browserbase session browses company public pages, GPT-4o builds dossier
+- Company Research Agent — single Browserbase session browses company public pages, Gemini builds dossier
 - Find Jobs page with search controls, filter, sort dropdown, pagination
 - Dashboard with stats bar, recent activity, analytics charts
 - PostHog event tracking throughout
@@ -231,7 +231,7 @@ A developer or technical job seeker who:
 
 - User can sign up, fill profile, upload resume, and start finding jobs in under 5 minutes
 - Adzuna job discovery returns relevant tech jobs for any title and location search
-- GPT-4o match scores feel accurate and the reasoning makes sense
+- Gemini match scores feel accurate and the reasoning makes sense
 - Company Research Agent returns a useful dossier for well-known tech companies
 - Company Research Agent gracefully handles companies with minimal web presence
 - Job details page displays clean structured job information
