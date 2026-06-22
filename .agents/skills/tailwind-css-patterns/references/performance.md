@@ -2,18 +2,17 @@
 
 ## Bundle Size Optimization
 
-Configure content sources for optimal purging:
+Configure content sources for optimal tree-shaking:
 
 ```javascript
-// tailwind.config.js
+// tailwind.config.js (v4+)
 export default {
   content: [
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx,vue,svelte}",
     "./node_modules/@mycompany/ui-lib/**/*.{js,ts,jsx,tsx}",
   ],
-  // Enable JIT for faster builds
-  jit: true,
+  // Note: JIT is always enabled in v4+, no configuration needed
 }
 ```
 
@@ -68,26 +67,18 @@ export default {
 
 ## Production Build Optimization
 
-### PurgeCSS Configuration
+### Content Configuration (v4)
+
+In Tailwind v4, use `content` property (not `purge`):
 
 ```javascript
 // tailwind.config.js
-module.exports = {
-  purge: {
-    enabled: process.env.NODE_ENV === 'production',
-    content: [
-      './src/**/*.html',
-      './src/**/*.jsx',
-      './src/**/*.tsx',
-    ],
-    options: {
-      safelist: [
-        'bg-red-500',
-        'text-center',
-        // Classes that shouldn't be purged
-      ],
-    },
-  },
+export default {
+  content: [
+    './src/**/*.html',
+    './src/**/*.jsx',
+    './src/**/*.tsx',
+  ],
 }
 ```
 
@@ -96,14 +87,16 @@ module.exports = {
 ```bash
 # Use cssnano for minification
 npm install -D cssnano
+```
 
-# In postcss.config.js
-module.exports = {
-  plugins: [
-    require('tailwindcss'),
-    require('autoprefixer'),
-    ...(process.env.NODE_ENV === 'production' ? [require('cssnano')] : []),
-  ],
+```javascript
+// postcss.config.mjs (ES module syntax for v4)
+export default {
+  plugins: {
+    '@tailwindcss/postcss': {},
+    autoprefixer: {},
+    ...(process.env.NODE_ENV === 'production' ? { cssnano: {} } : {}),
+  },
 }
 ```
 
@@ -111,9 +104,9 @@ module.exports = {
 
 ## Best Practices for Performance
 
-1. **Use the JIT engine**: Faster builds, smaller output
+1. **JIT is automatic in v4**: Always enabled, no configuration needed
 2. **Configure content correctly**: Only include files that use Tailwind
 3. **Minimize custom CSS**: Use Tailwind utilities over custom CSS
-4. **Enable purging in production**: Removes unused styles
-5. **Use `@layer` for custom styles**: Helps with organization and purging
+4. **Tree-shaking is automatic**: v4 removes unused styles in production builds
+5. **Use `@layer` for custom styles**: Helps with organization and tree-shaking
 6. **Avoid `@apply` in components**: Prefer composing utilities in markup

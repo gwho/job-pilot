@@ -155,14 +155,13 @@ Used for: primary buttons, active nav items, match score bars, tailored badge, f
 
 ### Match Score Colors
 
-Match score bars and indicators use gradient stops based on score range:
+Match score bars and indicators use color based on score range:
 
 | Score Range | Color  | Token                                  |
 | ----------- | ------ | -------------------------------------- |
-| 90-100%     | Green  | `text-success` / `bg-success-lightest` |
-| 70-89%      | Green  | `text-success` / `bg-success-light`    |
-| 50-69%      | Orange | `text-warning`                         |
-| Below 50%   | Gray   | `text-text-muted`                      |
+| 80-100%     | Green  | `text-success` / `bg-success`          |
+| 60-79%      | Blue   | `text-info` / `bg-info`                |
+| Below 60%   | Orange | `text-warning` / `bg-warning`          |
 
 ### Skills Badges
 
@@ -231,7 +230,7 @@ Font family: **Inter** — import from Google Fonts or use next/font/google.
 
 ```
 background: bg-surface
-border: 1px solid var(--border)
+border: 1px solid var(--color-border)
 border-radius: 16px (rounded-2xl in Tailwind)
 padding: 24px (p-6)
 box-shadow: 0px 1px 3px rgba(0,0,0,0.1), 0px 1px 2px -1px rgba(0,0,0,0.1)
@@ -347,4 +346,4 @@ size: 36x36px
 - `--accent` (#7C5CFC) is the only purple — never use Tailwind's built-in purple scale
 - Match score bars always use color tokens based on score range — never hardcoded colors
 - LinkedIn badge always uses `--linkedin` (#0A66C2) — never generic blue
-- All borders default to `--border` (#E7EAF3) — never use `border-gray-*`
+- All borders default to `--color-border` (#E7EAF3) — never use `border-gray-*`

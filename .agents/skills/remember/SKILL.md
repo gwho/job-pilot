@@ -170,6 +170,12 @@ Read `memory.md` first. Then check for these specific context files if they exis
 - `AGENTS.md` — Codex
 - `.clinerules` — Cline
 - `context.md` — generic fallback
+- `context/architecture.md` — system architecture
+- `context/build-plan.md` — build plan and feature order
+- `context/ui-rules.md` — UI design rules
+- `context/ui-tokens.md` — design tokens
+- `context/ui-registry.md` — component registry
+- `context/progress-tracker.md` — feature completion status
 
 Do not scan or read other files beyond this list. Build the most complete picture possible from what is available.
 

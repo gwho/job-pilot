@@ -224,8 +224,8 @@ const jobRecord = {
   user_id: userId,
   run_id: runId,
   source: "search", // always 'search' for Adzuna jobs
-  source_url: job.redirect_url,
-  external_apply_url: job.redirect_url,
+  source_url: job.redirect_url, // Adzuna tracking URL
+  external_apply_url: null, // Adzuna doesn't provide direct employer URL
   title: job.title,
   company: job.company.display_name,
   location: job.location.display_name,
@@ -391,7 +391,8 @@ const homepageData = await stagehand.extract({
 // Skip to synthesis with job description and profile only
 if (!homepageData.oneLiner && !homepageData.productSummary) {
   await stagehand.close();
-  // proceed to synthesis with empty companyResearch
+  // proceed to synthesis with empty companyResearch — return early
+  return;
 }
 
 // Step 2 — Sub-page extraction (max 3, prefer about/blog/engineering/product over careers)
