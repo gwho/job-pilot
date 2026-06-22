@@ -41,4 +41,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# test runner artifacts
+test-results/
 .env.local

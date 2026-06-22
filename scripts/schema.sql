@@ -36,6 +36,9 @@ CREATE TABLE IF NOT EXISTS profiles (
   portfolio_url       TEXT,
   work_authorization  TEXT,
   resume_pdf_url      TEXT,
+  resume_pdf_key      TEXT,
+  linkedin_connected  BOOLEAN     NOT NULL DEFAULT FALSE,
+  is_tailored         BOOLEAN     NOT NULL DEFAULT FALSE,
   is_complete         BOOLEAN     NOT NULL DEFAULT FALSE,
   created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()

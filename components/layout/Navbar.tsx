@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { getCtaHref } from "@/lib/auth";
+import { NavLinks } from "@/components/layout/NavLinks";
 
 export async function Navbar() {
   const ctaHref = await getCtaHref();
@@ -15,26 +16,7 @@ export async function Navbar() {
           </span>
         </Link>
 
-        <nav className="flex items-center gap-8">
-          <Link
-            href="/dashboard"
-            className="text-sm font-medium text-text-dark hover:text-accent transition-colors"
-          >
-            Dashboard
-          </Link>
-          <Link
-            href="/find-jobs"
-            className="text-sm font-medium text-text-dark hover:text-accent transition-colors"
-          >
-            Find Jobs
-          </Link>
-          <Link
-            href="/profile"
-            className="text-sm font-medium text-text-dark hover:text-accent transition-colors"
-          >
-            Profile
-          </Link>
-        </nav>
+        <NavLinks />
 
         <Link
           href={ctaHref}

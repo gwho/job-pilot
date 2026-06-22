@@ -19,6 +19,44 @@ database table to TypeScript.
 
 ---
 
+## How To Use An LLM Before This Tutorial
+
+Use a separate LLM session to warm up on database design before reading the real schema.
+Ask for conceptual examples first, then come back and trace the exact SQL in
+`scripts/schema.sql`.
+
+Prompt 1:
+
+```text
+Teach me shared primary keys for a one-to-one user profile table.
+Compare profiles.id = auth.users.id with profiles having its own generated id plus
+user_id. Ask me to choose which design is simpler for auth-owned profiles.
+```
+
+Prompt 2:
+
+```text
+Explain PostgreSQL RLS policies with USING and WITH CHECK.
+Use SELECT, INSERT, UPDATE, and DELETE examples. Then quiz me on which clause protects
+existing rows and which protects new data.
+```
+
+Prompt 3:
+
+```text
+Teach me how to map database rows to TypeScript types.
+Explain Row, Insert, and Update shapes, and why columns with database defaults become
+optional for inserts.
+```
+
+Practice before continuing:
+
+- Explain why `profiles.id` can be both primary key and foreign key.
+- Predict which RLS policy prevents inserting a row for another user.
+- Say why `JobInsert` should not require `id` or `found_at`.
+
+---
+
 ## The schema at a glance
 
 Before any SQL, hold the shape of the four tables and how they relate:

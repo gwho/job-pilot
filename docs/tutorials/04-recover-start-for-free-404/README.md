@@ -19,6 +19,43 @@ the reported symptom isn't the same as fixing the system the user actually needs
 
 ---
 
+## How To Use An LLM Before This Tutorial
+
+Use an LLM as a debugging coach before reading the incident. The warm-up goal is to
+practice classifying failures and testing claims instead of accepting plausible stories.
+
+Prompt 1:
+
+```text
+Teach me a three-mode recovery framework for software bugs:
+1 isolated bug, 2 polluted session from stacked fixes, 3 wrong foundation.
+Give me examples and quiz me on which mode each example belongs to.
+```
+
+Prompt 2:
+
+```text
+Explain why a phased build can produce expected temporary 404s.
+Use a homepage link to a future dashboard as the example. Ask me when this is a bug and
+when it is a missing placeholder.
+```
+
+Prompt 3:
+
+```text
+Teach me how to falsify a framework claim with a cheap runtime check.
+Use a protected route and curl redirect as the example. Ask me to write the expected
+output if the middleware/proxy ran.
+```
+
+Practice before continuing:
+
+- Classify the Start for free 404 as failure mode 1, 2, or 3.
+- Decide what one command would prove whether route protection is running.
+- Explain why a targeted fix can still need a follow-up project review.
+
+---
+
 ## The incident, in one sentence
 
 A logged-in user clicked **"Start for free"** on the homepage and landed on a `404 This

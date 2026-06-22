@@ -7,6 +7,42 @@
 
 ---
 
+## How To Use An LLM Before This Tutorial
+
+Use an LLM to rehearse relational database basics before reading the JobPilot schema.
+Ask it for tiny examples, then return here and map the ideas to `profiles`,
+`agent_runs`, `jobs`, and `agent_logs`.
+
+Prompt 1:
+
+```text
+Teach me primary keys, foreign keys, ON DELETE CASCADE, and ON DELETE SET NULL.
+Use a users -> projects -> tasks example. Then quiz me on what gets deleted or kept.
+```
+
+Prompt 2:
+
+```text
+Explain PostgreSQL Row Level Security in beginner-friendly terms.
+Use a table with user_id and a policy using auth.uid(). Ask me to predict which rows two
+different users can see.
+```
+
+Prompt 3:
+
+```text
+Teach me why indexes matter for queries that filter by user_id and sort by created_at.
+Compare a single-column index with a composite index.
+```
+
+Practice before continuing:
+
+- Explain why a 1:1 profile table can use the auth user UUID as its primary key.
+- Predict when `ON DELETE CASCADE` is safer than `ON DELETE SET NULL`.
+- Say why every user-owned table needs an RLS policy.
+
+---
+
 ## Core Architecture Diagram
 
 This diagram shows how the database tables relate, how access is gated by RLS policies using `auth.uid()`, and how indexes speed up the database planner:

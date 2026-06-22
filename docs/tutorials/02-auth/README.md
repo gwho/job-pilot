@@ -9,6 +9,44 @@ yourself" exercise. Don't skip them — they're where the understanding actually
 
 ---
 
+## How To Use An LLM Before This Tutorial
+
+Auth is easier to study if you first separate the moving parts: OAuth provider redirects,
+PKCE verifier storage, request cookies, response cookies, Server Actions, and protected
+route checks. Use an LLM for a concept primer before reading JobPilot's exact code.
+
+Prompt 1:
+
+```text
+Explain OAuth with PKCE for a server-rendered web app.
+Use a diagram with browser, app server, and provider. Include where the code verifier is
+created, stored, and checked. Then quiz me on the order of redirects.
+```
+
+Prompt 2:
+
+```text
+Teach me request cookies vs response cookies.
+Use login and logout examples. Ask me to predict which direction cookies move in each
+step.
+```
+
+Prompt 3:
+
+```text
+Explain Next.js Server Actions used from plain <form action={...}> elements.
+Compare that to a client onClick handler that calls fetch().
+Give me 3 tradeoff questions.
+```
+
+Practice before continuing:
+
+- Draw the OAuth round trip from `/login` to provider to `/api/auth/callback`.
+- Explain why the PKCE verifier should be `httpOnly`.
+- Say why protected routes should be checked before rendering the page.
+
+---
+
 ## Map of the system
 
 Before touching code, hold this picture in your head. Six pieces, three of them you'll

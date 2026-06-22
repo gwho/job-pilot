@@ -55,6 +55,7 @@
   /* Warning — orange */
   --color-warning: #ff8904;
   --color-warning-foreground: #ffffff;
+  --color-warning-light: #fff3e0;
 
   /* Error — red */
   --color-error: #ef4444;
