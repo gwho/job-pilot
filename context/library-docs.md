@@ -335,7 +335,7 @@ const jobRecord = {
 - Never pass `where` if location is empty — omit the parameter entirely
 - `source` is always `'search'` for Adzuna jobs — never any other value
 - `salary_is_predicted: "1"` means Adzuna estimated the salary — this is normal
-- Adzuna description is a snippet — GPT-4o scores from it, not a full description
+- Adzuna description is a snippet — Gemini scores from it, not a full description
 - Default country to `'us'` — support `gb`, `au`, `ca` as alternatives
 
 ---
@@ -385,7 +385,7 @@ const stagehand = new Stagehand({
   apiKey: process.env.BROWSERBASE_API_KEY!,
   projectId: process.env.BROWSERBASE_PROJECT_ID!,
   browserbaseSessionID: session.id,
-  model: { modelName: "openai/gpt-4o", apiKey: process.env.OPENAI_API_KEY! },
+  model: { modelName: "gemini-2.5-flash-lite", apiKey: process.env.GOOGLE_API_KEY! },
   disablePino: true,
 });
 
@@ -499,7 +499,7 @@ const subPageData = await stagehand.extract({
   }),
 });
 
-// Step 3 — GPT-4o synthesis (after browser closes)
+// Step 3 — Gemini synthesis (after browser closes)
 // Feed three data sources: company research + job from DB + profile from DB
 const systemPrompt = `You are a sharp career strategist preparing a candidate to apply for a specific role. You are given (a) research collected from the company's own website, (b) the job posting, and (c) the candidate's profile. Produce a concise, concrete briefing that gives this specific candidate an edge for this specific role.
 
@@ -540,7 +540,7 @@ Skills: ${profile.skills.join(", ")}
 Work history: ${JSON.stringify(profile.work_experience)}`;
 
 const response = await openai.chat.completions.create({
-  model: "gpt-4o",
+  model: "gemini-2.5-flash-lite",
   response_format: { type: "json_object" },
   temperature: 0.4,
   messages: [
@@ -569,7 +569,7 @@ const response = await openai.chat.completions.create({
 - Always use `extract()` with a Zod schema — never parse raw HTML or use regex
 - Always wrap every `act()` and `extract()` in try/catch
 - Always call `await stagehand.close()` when done — ends the Browserbase session
-- Model is always `gpt-4o` — never use other models
+- Model is always `gemini-2.5-flash-lite` — never use other models
 - Temperature is `0.4` for synthesis — grounded but flexible enough to make real connections
 - Max 3 sub-pages — never exceed this on free plan
 - Always close session in finally block — never leave sessions open even if research fails
@@ -577,19 +577,22 @@ const response = await openai.chat.completions.create({
 - If browser research returns empty — still run synthesis with job + profile only
 - yourEdge, gapsToAddress, and smartQuestions are the most valuable fields — never skip them
 
-## OpenAI GPT-4o
+## Google Gemini (via OpenAI-compatible endpoint)
 
-**Check first:** Check AGENTS.md for an installed OpenAI skill. The skill will have the latest API patterns and model capabilities.
+**Model:** `gemini-2.5-flash-lite` — cheapest capable Gemini model. Free tier: 1,000 req/day, 15 RPM via Google AI Studio. Costs apply via `GOOGLE_API_KEY` when free tier is exceeded (covered by Google AI Pro $10/month credits).
 
 ### Structured JSON Response
 
 ```typescript
 import OpenAI from "openai";
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
+const openai = new OpenAI({
+  apiKey: process.env.GOOGLE_API_KEY!,
+  baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
+});
 
 const response = await openai.chat.completions.create({
-  model: "gpt-4o",
+  model: "gemini-2.5-flash-lite",
   response_format: { type: "json_object" },
   temperature: 0.3,
   messages: [
@@ -621,7 +624,7 @@ const result = JSON.parse(response.choices[0].message.content!);
 
 **Rules:**
 
-- Model string is always `'gpt-4o'` — never use other model names
+- Model string is always `'gemini-2.5-flash-lite'` — never use other model names
 - Always use `response_format: { type: 'json_object' }` for structured data
 - Always parse `response.choices[0].message.content` as string — even with json_object it returns a string
 - Always validate parsed JSON before using — wrap in try/catch

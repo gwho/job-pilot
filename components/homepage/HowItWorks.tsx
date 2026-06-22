@@ -80,7 +80,7 @@ export function HowItWorks() {
             {
               title: "Find jobs that actually fit you",
               description:
-                "JobPilot pulls live listings from Adzuna and scores every one against your real skills using GPT-4o — not just keyword matches.",
+                "JobPilot pulls live listings from Adzuna and scores every one against your real skills using AI — not just keyword matches.",
             },
             {
               title: "Know the companies before you apply",

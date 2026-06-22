@@ -5,6 +5,7 @@ import { AlertCircle, CheckCircle, Upload, Plus, X } from "lucide-react";
 
 import { saveProfile, uploadResume, getResumeSignedUrl } from "@/actions/profile";
 import { calculateCompletion } from "@/lib/profile-utils";
+import type { ProfileExtraction } from "@/agent/extractor";
 import type {
   Profile,
   WorkExperienceEntry,
@@ -207,6 +208,13 @@ export function ProfileForm({ profile, email }: Props) {
   const [isSaving, startSave] = useTransition();
   const [isUploading, startUpload] = useTransition();
   const [isViewingResume, startViewResume] = useTransition();
+  const [isExtracting, startExtract] = useTransition();
+
+  // Extraction feedback
+  const [extractResult, setExtractResult] = useState<{
+    success: boolean;
+    error?: string;
+  } | null>(null);
 
   // ---------------------------------------------------------------------------
   // Derived values — single source of truth via calculateCompletion
@@ -328,6 +336,55 @@ export function ProfileForm({ profile, email }: Props) {
       if (result.url) {
         window.open(result.url, "_blank", "noopener,noreferrer");
       }
+    });
+  }
+
+  function applyExtraction(data: ProfileExtraction) {
+    setForm((prev) => ({
+      ...prev,
+      ...(data.full_name != null && { full_name: data.full_name }),
+      ...(data.phone != null && { phone: data.phone }),
+      ...(data.location != null && { location: data.location }),
+      ...(data.current_title != null && { current_title: data.current_title }),
+      ...(data.experience_level != null && {
+        experience_level: data.experience_level,
+      }),
+      ...(data.years_experience != null && {
+        years_experience: String(data.years_experience),
+      }),
+      ...(data.linkedin_url != null && { linkedin_url: data.linkedin_url }),
+      ...(data.portfolio_url != null && { portfolio_url: data.portfolio_url }),
+      ...(data.work_authorization != null && {
+        work_authorization: data.work_authorization,
+      }),
+      ...(data.remote_preference != null && {
+        remote_preference: data.remote_preference,
+      }),
+      ...(data.salary_expectation != null && {
+        salary_expectation: data.salary_expectation,
+      }),
+    }));
+    if (data.skills?.length) setSkills(data.skills);
+    if (data.industries?.length) setIndustries(data.industries);
+    if (data.job_titles_seeking?.length)
+      setJobTitlesSeeking(data.job_titles_seeking);
+    if (data.work_experience?.length) setWorkExperience(data.work_experience);
+    if (data.education?.degree) setEducation(data.education);
+  }
+
+  function handleExtract() {
+    setExtractResult(null);
+    startExtract(async () => {
+      const res = await fetch("/api/profile/extract", { method: "POST" });
+      const result = (await res.json()) as
+        | { success: true; data: ProfileExtraction }
+        | { success: false; error: string };
+      if (!result.success) {
+        setExtractResult({ success: false, error: result.error });
+        return;
+      }
+      applyExtraction(result.data);
+      setExtractResult({ success: true });
     });
   }
 
@@ -593,6 +650,28 @@ export function ProfileForm({ profile, email }: Props) {
             </button>
           </div>
         </div>
+
+        {resumeFileName && (
+          <div className="mt-4 pt-4 border-t border-border">
+            {extractResult?.success && (
+              <p className="text-sm text-success mb-3">
+                Profile filled in from your resume — review the fields below
+                and save when ready.
+              </p>
+            )}
+            {extractResult && !extractResult.success && (
+              <p className="text-sm text-error mb-3">{extractResult.error}</p>
+            )}
+            <button
+              type="button"
+              onClick={handleExtract}
+              disabled={isExtracting}
+              className="bg-accent text-white text-sm font-medium rounded-md px-4 py-2 hover:bg-accent-dark transition-colors disabled:opacity-60"
+            >
+              {isExtracting ? "Extracting..." : "Extract from Resume"}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* ------------------------------------------------------------------ */}
