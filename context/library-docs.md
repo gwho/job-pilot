@@ -200,20 +200,32 @@ const { error } = await insforge
 ### Storage
 
 ```typescript
-// Upload file
+// Remove old file before re-uploading (upload() does NOT upsert — it auto-renames on conflict)
+const { data: profile } = await insforge.database
+  .from("profiles")
+  .select("resume_pdf_key")
+  .eq("id", userId)
+  .maybeSingle();
+
+if (profile?.resume_pdf_key) {
+  await insforge.storage.from("resumes").remove(profile.resume_pdf_key);
+}
+
+// Upload new file — returns { data: { key, url }, error }
 const { data, error } = await insforge.storage
   .from("resumes")
-  .upload(`${userId}/resume.pdf`, fileBuffer, {
-    contentType: "application/pdf",
-    upsert: true, // overwrites existing file
-  });
+  .upload(`${userId}/resume.pdf`, file); // file is a File | Blob
 
-// Get public URL
-const { data } = insforge.storage
+// Save both key and URL to DB
+await insforge.database
+  .from("profiles")
+  .upsert([{ id: userId, resume_pdf_key: data.key, resume_pdf_url: data.url }]);
+
+// For private buckets, generate a signed URL for download (expires in 1h)
+const { data: signed } = await insforge.storage
   .from("resumes")
-  .getPublicUrl(`${userId}/resume.pdf`);
-
-const url = data.publicUrl;
+  .createSignedUrl(data.key, 3600);
+// signed.signedUrl is the time-limited download URL
 ```
 
 **Storage paths:**
@@ -222,9 +234,11 @@ const url = data.publicUrl;
 
 **Rules:**
 
-- Always use `upsert: true` for base resume uploads — overwrites existing file
-- Always save the public URL back to the DB after upload
-- Never write files to disk — always upload buffer directly to storage
+- `upload()` has NO `upsert` option — it auto-renames if the key already exists
+- Always `remove(existingKey)` before re-uploading to keep a single file per user
+- Always save `data.key` (not just `data.url`) to DB — key is needed for remove + signed URLs
+- `resumes` bucket is private — use `createSignedUrl(key, expiresIn)` to serve files; `getPublicUrl()` only works for public buckets
+- Never write files to disk — always upload File/Blob directly
 
 ---
 

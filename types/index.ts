@@ -18,6 +18,18 @@ export type JobType = 'fulltime' | 'parttime' | 'contract'
 export type AgentRunStatus = 'running' | 'completed' | 'failed'
 export type LogLevel = 'info' | 'success' | 'warning' | 'error'
 
+export type MissingField =
+  | 'FULL NAME'
+  | 'EMAIL'
+  | 'PHONE'
+  | 'LOCATION'
+  | 'CURRENT TITLE'
+  | 'EXPERIENCE LEVEL'
+  | 'YEARS EXP'
+  | 'SKILLS'
+  | 'WORK EXPERIENCE'
+  | 'EDUCATION'
+
 
 // ------------------------------------------------------------
 // Sub-types for JSONB columns
@@ -80,6 +92,8 @@ export interface Profile {
   portfolio_url: string | null
   work_authorization: WorkAuthorization | null
   resume_pdf_url: string | null
+  resume_pdf_key: string | null
+  resume_pdf_filename: string | null
   linkedin_connected: boolean
   is_tailored: boolean
   is_complete: boolean

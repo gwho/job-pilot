@@ -1,8 +1,10 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useTransition } from "react";
 import { AlertCircle, CheckCircle, Upload, Plus, X } from "lucide-react";
 
+import { saveProfile, uploadResume, getResumeSignedUrl } from "@/actions/profile";
+import { calculateCompletion } from "@/lib/profile-utils";
 import type {
   Profile,
   WorkExperienceEntry,
@@ -14,57 +16,16 @@ import type {
 } from "@/types/index";
 
 // ---------------------------------------------------------------------------
-// Mock data — typed as Profile so TypeScript catches any shape drift at
-// declaration time. All fields present; nullable fields explicitly null.
-// Feature 06 replaces this with a real Profile fetched server-side.
+// Props
 // ---------------------------------------------------------------------------
-const mockProfile: Profile = {
-  id: "mock-user-id",
-  full_name: "Taryn Ali",
-  email: "taryn@example.com",
-  phone: "(555) 300-0000",
-  location: "San Francisco, CA",
-  current_title: "Frontend Engineer",
-  experience_level: "junior",
-  years_experience: 4,
-  skills: ["React", "TypeScript", "Next.js", "Tailwind CSS"],
-  industries: ["FinTech", "Healthcare"],
-  work_experience: [
-    {
-      company: "Vercel",
-      title: "Frontend Engineer",
-      startDate: "January 2023",
-      endDate: null,
-      current: true,
-      responsibilities:
-        "Built Next.js features and optimized web vitals. Led a team of 3 developers.",
-    },
-  ],
-  education: {
-    degree: "High School",
-    fieldOfStudy: "Computer Science",
-    institution: null,
-    graduationYear: null,
-  },
-  job_titles_seeking: ["Frontend Engineer", "React Developer"],
-  remote_preference: "any",
-  preferred_locations: [],
-  salary_expectation: null,
-  cover_letter_tone: null,
-  linkedin_url: "https://linkedin.com/in/taryan",
-  portfolio_url: "https://github.com/taryanali",
-  work_authorization: "citizen",
-  resume_pdf_url: null,
-  is_complete: false,
-  created_at: "2026-06-18T00:00:00Z",
-  updated_at: "2026-06-18T00:00:00Z",
+type Props = {
+  profile: Profile | null;
+  email: string;
 };
 
 // ---------------------------------------------------------------------------
-// FormState — explicit type required for the setField generic helper.
-// Dropdown enum fields widen to include '' (empty string) because a controlled
-// <select> needs a string value for "no selection" — null cannot be used as
-// the value prop on an HTML element.
+// FormState — dropdown fields widen to include '' because a controlled
+// <select> needs a string for "no selection", not null.
 // ---------------------------------------------------------------------------
 type FormState = {
   full_name: string;
@@ -88,6 +49,13 @@ const EMPTY_WORK_ENTRY: WorkExperienceEntry = {
   endDate: null,
   current: false,
   responsibilities: "",
+};
+
+const EMPTY_EDUCATION: Education = {
+  degree: null,
+  fieldOfStudy: null,
+  institution: null,
+  graduationYear: null,
 };
 
 // Shared input class used throughout this form
@@ -170,47 +138,48 @@ function TagInput({
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
-export function ProfileForm() {
-  // Scalar form state
+export function ProfileForm({ profile, email }: Props) {
+  // Scalar form state — initialised from real profile or empty defaults
   const [form, setForm] = useState<FormState>({
-    full_name: mockProfile.full_name ?? "",
-    phone: mockProfile.phone ?? "",
-    location: mockProfile.location ?? "",
-    current_title: mockProfile.current_title ?? "",
-    experience_level: mockProfile.experience_level ?? "",
-    years_experience: String(mockProfile.years_experience ?? ""),
-    linkedin_url: mockProfile.linkedin_url ?? "",
-    portfolio_url: mockProfile.portfolio_url ?? "",
-    work_authorization: mockProfile.work_authorization ?? "",
-    remote_preference: mockProfile.remote_preference ?? "",
-    salary_expectation: mockProfile.salary_expectation ?? "",
-    cover_letter_tone: mockProfile.cover_letter_tone ?? "",
+    full_name: profile?.full_name ?? "",
+    phone: profile?.phone ?? "",
+    location: profile?.location ?? "",
+    current_title: profile?.current_title ?? "",
+    experience_level: profile?.experience_level ?? "",
+    years_experience: profile?.years_experience != null
+      ? String(profile.years_experience)
+      : "",
+    linkedin_url: profile?.linkedin_url ?? "",
+    portfolio_url: profile?.portfolio_url ?? "",
+    work_authorization: profile?.work_authorization ?? "",
+    remote_preference: profile?.remote_preference ?? "",
+    salary_expectation: profile?.salary_expectation ?? "",
+    cover_letter_tone: profile?.cover_letter_tone ?? "",
   });
 
   // Array states
-  const [skills, setSkills] = useState<string[]>(mockProfile.skills ?? []);
+  const [skills, setSkills] = useState<string[]>(profile?.skills ?? []);
   const [industries, setIndustries] = useState<string[]>(
-    mockProfile.industries ?? []
+    profile?.industries ?? []
   );
   const [jobTitlesSeeking, setJobTitlesSeeking] = useState<string[]>(
-    mockProfile.job_titles_seeking ?? []
+    profile?.job_titles_seeking ?? []
   );
   const [preferredLocations, setPreferredLocations] = useState<string[]>(
-    mockProfile.preferred_locations ?? []
+    profile?.preferred_locations ?? []
   );
 
   // Complex object states
   const [workExperience, setWorkExperience] = useState<WorkExperienceEntry[]>(
-    mockProfile.work_experience ?? []
+    profile?.work_experience ?? []
   );
   const [education, setEducation] = useState<Education>(
-    mockProfile.education ?? {
-      degree: null,
-      fieldOfStudy: null,
-      institution: null,
-      graduationYear: null,
-    }
+    profile?.education ?? EMPTY_EDUCATION
   );
+
+  // Boolean flags from profile
+  const [linkedinConnected] = useState(profile?.linkedin_connected ?? false);
+  const [isTailored] = useState(profile?.is_tailored ?? false);
 
   // Tag input cursor states
   const [skillInput, setSkillInput] = useState("");
@@ -218,40 +187,46 @@ export function ProfileForm() {
   const [jobTitleInput, setJobTitleInput] = useState("");
   const [locationInput, setLocationInput] = useState("");
 
-  // ---------------------------------------------------------------------------
-  // Derived values
-  // ---------------------------------------------------------------------------
-  const completionPercentage = useMemo(() => {
-    const checks = [
-      form.full_name.trim() !== "",
-      (mockProfile.email ?? "").trim() !== "",
-      form.phone.trim() !== "",
-      form.location.trim() !== "",
-      form.current_title.trim() !== "",
-      form.experience_level !== "",
-      form.years_experience !== "" && Number(form.years_experience) > 0,
-      skills.length > 0,
-      workExperience.length > 0,
-      education.degree !== null && education.degree !== "",
-    ];
-    return Math.round((checks.filter(Boolean).length / checks.length) * 100);
-  }, [form, skills, workExperience, education]);
+  // Resume upload state
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [resumeFileName, setResumeFileName] = useState<string | null>(
+    profile?.resume_pdf_filename ?? (profile?.resume_pdf_key ? "resume.pdf" : null)
+  );
+  const [uploadResult, setUploadResult] = useState<{
+    success: boolean;
+    error?: string;
+  } | null>(null);
 
-  const missingFields = useMemo(() => {
-    const missing: string[] = [];
-    if (!form.full_name.trim()) missing.push("FULL NAME");
-    if (!(mockProfile.email ?? "").trim()) missing.push("EMAIL");
-    if (!form.phone.trim()) missing.push("PHONE");
-    if (!form.location.trim()) missing.push("LOCATION");
-    if (!form.current_title.trim()) missing.push("CURRENT TITLE");
-    if (!form.experience_level) missing.push("EXPERIENCE LEVEL");
-    if (!form.years_experience || Number(form.years_experience) <= 0)
-      missing.push("YEARS EXP");
-    if (skills.length === 0) missing.push("SKILLS");
-    if (workExperience.length === 0) missing.push("WORK EXPERIENCE");
-    if (!education.degree) missing.push("EDUCATION");
-    return missing;
-  }, [form, skills, workExperience, education]);
+  // Save state
+  const [saveResult, setSaveResult] = useState<{
+    success: boolean;
+    error?: string;
+  } | null>(null);
+
+  // Pending states
+  const [isSaving, startSave] = useTransition();
+  const [isUploading, startUpload] = useTransition();
+  const [isViewingResume, startViewResume] = useTransition();
+
+  // ---------------------------------------------------------------------------
+  // Derived values — single source of truth via calculateCompletion
+  // ---------------------------------------------------------------------------
+  const { percentage: completionPercentage, missingFields } = useMemo(
+    () =>
+      calculateCompletion({
+        full_name: form.full_name,
+        email,
+        phone: form.phone,
+        location: form.location,
+        current_title: form.current_title,
+        experience_level: form.experience_level || null,
+        years_experience: form.years_experience,
+        skills,
+        work_experience: workExperience,
+        education,
+      }),
+    [form, email, skills, workExperience, education]
+  );
 
   // ---------------------------------------------------------------------------
   // Handlers
@@ -327,6 +302,62 @@ export function ProfileForm() {
 
   function removeWorkEntry(index: number) {
     setWorkExperience((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploadResult(null);
+    startUpload(async () => {
+      const fd = new FormData();
+      fd.append("resume", file);
+      const result = await uploadResume(fd);
+      setUploadResult(result);
+      if (result.success) {
+        setResumeFileName(result.filename ?? file.name);
+      }
+      // Reset input so the same file can be re-selected
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    });
+  }
+
+  function handleViewResume() {
+    startViewResume(async () => {
+      const result = await getResumeSignedUrl();
+      if (result.url) {
+        window.open(result.url, "_blank", "noopener,noreferrer");
+      }
+    });
+  }
+
+  function handleSave() {
+    setSaveResult(null);
+    startSave(async () => {
+      const result = await saveProfile({
+        full_name: form.full_name,
+        phone: form.phone,
+        location: form.location,
+        current_title: form.current_title,
+        experience_level: form.experience_level,
+        years_experience: form.years_experience,
+        linkedin_url: form.linkedin_url,
+        portfolio_url: form.portfolio_url,
+        work_authorization: form.work_authorization,
+        remote_preference: form.remote_preference,
+        salary_expectation: form.salary_expectation,
+        cover_letter_tone: form.cover_letter_tone,
+        skills,
+        industries,
+        job_titles_seeking: jobTitlesSeeking,
+        preferred_locations: preferredLocations,
+        work_experience: workExperience,
+        education,
+        linkedin_connected: linkedinConnected,
+        is_tailored: isTailored,
+      });
+      setSaveResult(result);
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -456,14 +487,16 @@ export function ProfileForm() {
             </div>
             <div>
               <p className="text-sm font-medium text-text-primary">LinkedIn</p>
-              <p className="text-xs text-text-muted">Not connected</p>
+              <p className="text-xs text-text-muted">
+                {linkedinConnected ? "Connected" : "Not connected"}
+              </p>
             </div>
           </div>
           <button
             type="button"
             className="bg-accent text-accent-foreground text-sm font-medium rounded-md px-4 py-2 hover:bg-accent-dark transition-colors"
           >
-            Connect LinkedIn
+            {linkedinConnected ? "Disconnect" : "Connect LinkedIn"}
           </button>
         </div>
       </div>
@@ -480,24 +513,74 @@ export function ProfileForm() {
           tailored one from your details below.
         </p>
 
+        {/* Hidden file input */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".pdf"
+          aria-label="Upload resume PDF"
+          className="hidden"
+          onChange={handleFileChange}
+        />
+
         {/* Upload zone */}
-        <div className="border-2 border-dashed border-border rounded-xl p-8 flex flex-col items-center gap-2 bg-surface-secondary mb-4">
-          <Upload size={28} className="text-text-muted" />
-          <p className="text-sm font-medium text-text-dark">
-            Click to upload or drag and drop
-          </p>
-          <p className="text-xs text-text-muted">
-            PDF formatting only • Maximum file size 5MB
-          </p>
-        </div>
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={isUploading}
+          className="w-full border-2 border-dashed border-border rounded-xl p-8 flex flex-col items-center gap-2 bg-surface-secondary mb-4 hover:border-accent transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+        >
+          {isUploading ? (
+            <>
+              <Upload size={28} className="text-accent animate-pulse" />
+              <p className="text-sm font-medium text-text-dark">Uploading...</p>
+            </>
+          ) : resumeFileName ? (
+            <>
+              <CheckCircle size={28} className="text-success" />
+              <p className="text-sm font-medium text-text-dark">
+                {resumeFileName}
+              </p>
+              <p className="text-xs text-text-muted">Click to replace</p>
+            </>
+          ) : (
+            <>
+              <Upload size={28} className="text-text-muted" />
+              <p className="text-sm font-medium text-text-dark">
+                Click to upload or drag and drop
+              </p>
+              <p className="text-xs text-text-muted">
+                PDF formatting only • Maximum file size 5MB
+              </p>
+            </>
+          )}
+        </button>
+
+        {uploadResult && !uploadResult.success && (
+          <p className="text-sm text-error mb-4">{uploadResult.error}</p>
+        )}
 
         <div className="flex items-center justify-between">
-          <button
-            type="button"
-            className="bg-surface border border-border text-text-primary text-sm font-medium rounded-md px-4 py-2 hover:bg-surface-secondary transition-colors"
-          >
-            Select Resume
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isUploading}
+              className="bg-surface border border-border text-text-primary text-sm font-medium rounded-md px-4 py-2 hover:bg-surface-secondary transition-colors disabled:opacity-60"
+            >
+              {resumeFileName ? "Replace Resume" : "Select Resume"}
+            </button>
+            {resumeFileName && (
+              <button
+                type="button"
+                onClick={handleViewResume}
+                disabled={isViewingResume}
+                className="text-sm text-accent underline-offset-2 hover:underline disabled:opacity-50 transition-opacity"
+              >
+                {isViewingResume ? "Opening..." : "View current resume"}
+              </button>
+            )}
+          </div>
           <div className="flex items-center gap-3">
             <span className="text-sm text-text-muted">
               Need a fresh document based on the fields below?
@@ -513,7 +596,7 @@ export function ProfileForm() {
       </div>
 
       {/* ------------------------------------------------------------------ */}
-      {/* Card 3 — Profile Information form                                   */}
+      {/* Card 4 — Profile Information form                                   */}
       {/* ------------------------------------------------------------------ */}
       <div className="bg-surface border border-border rounded-2xl p-6 shadow-sm">
         <h2 className="text-base font-semibold text-text-primary mb-1">
@@ -549,8 +632,9 @@ export function ProfileForm() {
                   </label>
                   <input
                     type="email"
-                    value={mockProfile.email ?? ""}
+                    value={email}
                     disabled
+                    aria-label="Email address"
                     className="w-full bg-surface-secondary border border-border rounded-md px-3 py-2 text-sm text-text-muted cursor-not-allowed"
                   />
                 </div>
@@ -621,6 +705,7 @@ export function ProfileForm() {
                   Work Authorization
                 </label>
                 <select
+                  aria-label="Work Authorization"
                   value={form.work_authorization}
                   onChange={(e) =>
                     setField(
@@ -666,6 +751,8 @@ export function ProfileForm() {
                     Experience Level
                   </label>
                   <select
+                    aria-label="Experience Level"
+                    title="Experience Level"
                     value={form.experience_level}
                     onChange={(e) =>
                       setField(
@@ -883,6 +970,8 @@ export function ProfileForm() {
                     Highest Degree
                   </label>
                   <select
+                    aria-label="Highest Degree"
+                    title="Highest Degree"
                     value={education.degree ?? ""}
                     onChange={(e) =>
                       setEducation((prev) => ({
@@ -984,6 +1073,8 @@ export function ProfileForm() {
                     Remote Preference
                   </label>
                   <select
+                    aria-label="Remote Preference"
+                    title="Remote Preference"
                     value={form.remote_preference}
                     onChange={(e) =>
                       setField(
@@ -1036,6 +1127,8 @@ export function ProfileForm() {
                   Cover Letter Tone
                 </label>
                 <select
+                  aria-label="Cover Letter Tone"
+                  title="Cover Letter Tone"
                   value={form.cover_letter_tone}
                   onChange={(e) =>
                     setField(
@@ -1055,14 +1148,28 @@ export function ProfileForm() {
           </section>
         </div>
 
-        {/* Save button — inert in Feature 05, wired in Feature 06 */}
-        <div className="mt-8">
+        {/* Save button */}
+        <div className="mt-8 space-y-2">
           <button
             type="button"
-            className="w-full bg-accent text-accent-foreground font-medium rounded-md px-4 py-2.5 text-sm hover:bg-accent-dark transition-colors"
+            onClick={handleSave}
+            disabled={isSaving}
+            className="w-full bg-accent text-accent-foreground font-medium rounded-md px-4 py-2.5 text-sm hover:bg-accent-dark transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            Save Profile
+            {isSaving ? "Saving..." : "Save Profile"}
           </button>
+
+          {saveResult && (
+            <p
+              className={`text-sm text-center ${
+                saveResult.success ? "text-success" : "text-error"
+              }`}
+            >
+              {saveResult.success
+                ? "Profile saved successfully"
+                : saveResult.error ?? "Failed to save profile"}
+            </p>
+          )}
         </div>
       </div>
     </div>

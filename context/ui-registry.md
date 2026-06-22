@@ -370,3 +370,52 @@ Last updated: 2026-06-17
 
 **Pattern notes:**
 Small inline auth failure message rendered inside the existing login card when `/login?error=oauth` is present. It intentionally keeps the card white (`bg-surface`) and uses error color only for the border/text so it follows the rule that color goes inside cards, not on the card surface. Reuse this compact `rounded-md border border-error bg-surface px-3 py-2 text-sm font-medium text-error` pattern for future form-level auth errors.
+
+---
+
+## Patterns
+
+---
+
+### Server Action with useTransition
+
+First established: Feature 06 — Profile Save Logic
+Files: `actions/profile.ts`, `components/profile/ProfileForm.tsx`
+Last updated: 2026-06-22
+
+**Client side (in any `"use client"` component):**
+```tsx
+const [isPending, startTransition] = useTransition()
+
+function handleSave() {
+  startTransition(async () => {
+    const result = await myServerAction(payload)
+    // update local feedback state from result
+  })
+}
+
+<button disabled={isPending} onClick={handleSave}>
+  {isPending ? "Saving..." : "Save"}
+</button>
+```
+
+**Server Action (in `actions/*.ts`):**
+```ts
+"use server"
+export async function myServerAction(payload: MyPayload) {
+  const insforge = await createInsforgeServer()
+  const { data: authData, error } = await insforge.auth.getCurrentUser()
+  if (error || !authData.user) return { success: false, error: "Not authenticated" }
+  // ... DB write
+  revalidatePath("/target-path")
+  return { success: true }
+}
+```
+
+**Rules:**
+- Server Actions live in `actions/` — never inline in a page or component
+- Always auth-check at the top of every Server Action
+- Email and other auth-owned fields come from the session, never from the payload
+- Use a separate `useTransition` per logical operation (save ≠ upload)
+- Return `{ success: boolean; error?: string }` — not thrown errors
+- Call `revalidatePath()` before returning so the page reflects the write immediately
