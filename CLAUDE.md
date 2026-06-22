@@ -1,0 +1,87 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+@AGENTS.md
+
+---
+
+## Commands
+
+```bash
+npm run dev      # Start dev server (Next.js 16, http://localhost:3000)
+npm run build    # Production build
+npm run lint     # Run ESLint
+```
+
+No test runner is configured. Verify features manually after implementation by running the dev server.
+
+---
+
+## Stack at a Glance
+
+| Concern        | Tool                                        |
+| -------------- | ------------------------------------------- |
+| Framework      | Next.js 16 App Router, React 19             |
+| Backend        | InsForge — auth, database, storage, realtime (Supabase-compatible API) |
+| AI             | OpenAI GPT-4o (matching, extraction, synthesis, resume generation) |
+| Browser agent  | Browserbase (cloud browser sessions) + Stagehand (AI page control) |
+| Job data       | Adzuna API (IT job listings) |
+| Analytics      | PostHog (event tracking + dashboard charts) |
+| PDF            | @react-pdf/renderer (resume generation), pdf-parse (resume extraction) |
+| Styling        | Tailwind CSS v4 + shadcn/ui |
+| Language       | TypeScript strict mode throughout |
+
+InsForge behaves like Supabase (`createBrowserClient` / `createServerClient` from `@insforge/ssr`). The client pattern is documented in `context/architecture.md` — never mix browser and server clients.
+
+---
+
+## Architecture in One Pass
+
+### Folder responsibilities
+
+| Folder        | Owns                                                                  |
+| ------------- | --------------------------------------------------------------------- |
+| `app/`        | Pages and API routes only — no business logic                         |
+| `agent/`      | All agent logic (Adzuna, research, matching, extraction) — no React   |
+| `actions/`    | Server Actions for UI-triggered mutations (profile save, job updates) |
+| `components/` | UI only — no DB calls, no data fetching                               |
+| `lib/`        | Third-party client initialisation and shared utilities                |
+| `types/`      | TypeScript types shared across the project                            |
+
+### Three data flows
+
+**UI mutations** → Server Action in `actions/` → InsForge DB write → `revalidatePath()`
+
+**Agent operations** → API route in `app/api/agent/` → function in `agent/` → Adzuna/GPT-4o → InsForge DB write → page revalidated
+
+**Company research** → `app/api/agent/research` → `agent/research.ts` → single Browserbase/Stagehand session (homepage + max 3 sub-pages) → GPT-4o synthesis → dossier saved to `jobs.company_research` JSONB
+
+### Key invariants
+
+- Agent code in `agent/` never imports from `components/` or `actions/`
+- Server Actions never call agent functions — only API routes do
+- All server-side InsForge writes use `createInsforgeServer()` — never the browser client
+- Every query must be scoped to `user_id` — never fetch without a user filter
+- Every Stagehand action is wrapped in try/catch; failures logged to `agent_logs`, never thrown
+- Browserbase sessions always closed with `stagehand.close()` — even on failure
+- Company research always returns a dossier — GPT-4o synthesises from job description + profile if browser research fails
+- Adzuna always includes `category=it-jobs`
+- `MATCH_THRESHOLD = 70` lives in `lib/utils.ts` — import it, never hardcode
+
+### Styling
+
+Tailwind v4 — tokens defined with `@theme` in `app/globals.css`. No `tailwind.config.ts` for colors. Never use raw Tailwind color classes (`bg-purple-500`) or hex values in components — only project token classes (`bg-accent`, `text-text-primary`). Full token list is in `context/ui-tokens.md`.
+
+### PostHog events (exactly four — do not add more without updating `context/code-standards.md`)
+
+| Event                | Fired when                              |
+| -------------------- | --------------------------------------- |
+| `job_search_started` | Find Jobs button clicked                |
+| `job_found`          | Each job discovered and saved           |
+| `profile_completed`  | User saves complete profile first time  |
+| `company_researched` | Company research dossier generated      |
+
+### Environment variables
+
+All in `.env.local`. Required: `NEXT_PUBLIC_INSFORGE_URL`, `NEXT_PUBLIC_INSFORGE_ANON_KEY`, `BROWSERBASE_API_KEY`, `BROWSERBASE_PROJECT_ID`, `OPENAI_API_KEY`, `ADZUNA_APP_ID`, `ADZUNA_APP_KEY`, `NEXT_PUBLIC_POSTHOG_KEY`, `NEXT_PUBLIC_POSTHOG_HOST`.
