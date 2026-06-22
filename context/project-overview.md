@@ -45,9 +45,8 @@ Full width layout on all pages. No sidebar.
 
 ### Homepage
 
-- Hero section
-- Logged in users → redirect to dashboard
-- Logged out users → redirect to login
+- Hero section — accessible to all users
+- CTA buttons handle navigation based on auth state
 
 ### Onboarding
 

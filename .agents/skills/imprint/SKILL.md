@@ -1,6 +1,6 @@
 ---
 name: imprint
-description: After building any UI component, extract the visual patterns that matter for consistency and save them to ui-registry.md. So every component built after this one matches what came before.
+description: After building any UI component, extract the visual patterns that matter for consistency and save them to context/ui-registry.md. So every component built after this one matches what came before.
 ---
 
 UI consistency does not happen by accident. It happens because every component is built with awareness of what already exists.
@@ -40,7 +40,7 @@ If no filepath is given, the skill identifies recently created or modified compo
 - The project UI already exists and consistency is uncertain
 - Multiple sessions have passed without running `/imprint`
 - Something looks visually off but it is hard to pinpoint why
-- Before establishing `ui-registry.md` for the first time on an existing project
+- Before establishing `context/ui-registry.md` for the first time on an existing project
 
 Run `/imprint audit` before running `/imprint` on any project where the UI was not tracked from the beginning.
 
@@ -86,9 +86,9 @@ Read the component code. Extract only the classes and values that affect visual 
 
 ---
 
-## Step 3 — Write to ui-registry.md
+## Step 3 — Write to context/context/ui-registry.md
 
-Open `ui-registry.md`. If it does not exist, create it.
+Open `context/context/ui-registry.md`. If it does not exist, create it.
 
 Add a new entry for the component that was captured. Do not overwrite existing entries — append to the registry.
 
@@ -124,10 +124,10 @@ should always match, what variations are allowed]
 
 ## Step 4 — Confirm What Was Captured
 
-After writing to ui-registry.md, confirm to the developer:
+After writing to context/context/ui-registry.md, confirm to the developer:
 
 ```
-Imprinted [Component Name] → ui-registry.md
+Imprinted [Component Name] → context/context/ui-registry.md
 
 Captured:
 - Background: [class]
@@ -149,11 +149,11 @@ developer knowing about]
 
 ---
 
-## How ui-registry.md Gets Used
+## How context/ui-registry.md Gets Used
 
 The registry is not just a record. It is the consistency enforcer for every future session.
 
-At the start of any session that involves UI work, Claude reads ui-registry.md before writing any component. When building a new card, it checks how existing cards were built. When building a new button, it checks what button patterns already exist. When building a new status badge, it matches the exact classes already in use.
+At the start of any session that involves UI work, Claude reads context/ui-registry.md before writing any component. When building a new card, it checks how existing cards were built. When building a new button, it checks what button patterns already exist. When building a new status badge, it matches the exact classes already in use.
 
 The registry grows as the project grows. The more components are imprinted, the more consistent every new component becomes — because Claude always has a precise reference for what already exists.
 
@@ -225,24 +225,24 @@ and what the design system defines]
 
 ### Step 3 — Wait for developer confirmation
 
-Present the audit report. Do not fix anything. Do not update ui-registry.md yet.
+Present the audit report. Do not fix anything. Do not update context/ui-registry.md yet.
 
 Ask the developer:
 
 ```
 Audit complete. [X] conflicts found across [Y] properties.
 
-Before I establish the baseline in ui-registry.md:
+Before I establish the baseline in context/ui-registry.md:
 1. Do the recommendations above look correct?
 2. Are there any conflicts you want to resolve differently?
 3. Should I flag the hardcoded values as issues to fix?
 
-Confirm the baseline and I will write it to ui-registry.md.
+Confirm the baseline and I will write it to context/ui-registry.md.
 ```
 
 ### Step 4 — Write the confirmed baseline
 
-After the developer confirms — write the agreed baseline to `ui-registry.md` as the foundation. Label it clearly:
+After the developer confirms — write the agreed baseline to `context/ui-registry.md` as the foundation. Label it clearly:
 
 ```markdown
 ## Baseline — Established [date]

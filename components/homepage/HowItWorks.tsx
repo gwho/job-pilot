@@ -54,7 +54,7 @@ function Section({
   );
 
   return (
-    <div className="grid grid-cols-2 gap-16 items-center">
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-16 items-center">
       {imageLeft ? (
         <>
           {imageCol}

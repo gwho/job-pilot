@@ -34,6 +34,8 @@ Provides actionable patterns for responsive, accessible UIs with Tailwind CSS v4
 
 ### Common Patterns
 
+**Note:** These are generic Tailwind examples. In this project, use project tokens instead of palette-based classes (e.g., `bg-surface` instead of `bg-white`, `text-text-secondary` instead of `text-gray-600`).
+
 ```html
 <!-- Center content -->
 <div class="flex items-center justify-center min-h-screen">
@@ -45,7 +47,7 @@ Provides actionable patterns for responsive, accessible UIs with Tailwind CSS v4
   <!-- Items -->
 </div>
 
-<!-- Card component -->
+<!-- Generic Tailwind Example (use project tokens in this repo) -->
 <div class="bg-white rounded-lg shadow-lg p-6">
   <h3 class="text-xl font-bold">Title</h3>
   <p class="text-gray-600">Description</p>
@@ -65,6 +67,8 @@ Provides actionable patterns for responsive, accessible UIs with Tailwind CSS v4
 
 ### Responsive Card Component
 
+**Generic Tailwind Example (use project tokens in this repo):**
+
 ```tsx
 function ProductCard({ product }: { product: Product }) {
   return (
@@ -83,6 +87,8 @@ function ProductCard({ product }: { product: Product }) {
 
 ### Dark Mode Toggle
 
+**Generic Tailwind Example (use project tokens in this repo):**
+
 ```html
 <div class="bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
   <h1 class="dark:text-white">Title</h1>
@@ -90,6 +96,8 @@ function ProductCard({ product }: { product: Product }) {
 ```
 
 ### Form Input
+
+**Generic Tailwind Example (use project tokens in this repo):**
 
 ```html
 <input

@@ -59,9 +59,9 @@ module.exports = {
 }
 ```
 
-#### Content with Transform
+#### Content with Transform (Legacy - v3)
 
-For dynamic class names, use safelist or content transform:
+**Note:** The following pattern is for Tailwind v3. In v4, safelist patterns are simplified. For dynamic class names in v3, use safelist or content transform:
 
 ```javascript
 module.exports = {
@@ -281,9 +281,11 @@ module.exports = {
 }
 ```
 
-### 5. Optimize for Production
+### 5. Optimize for Production (Legacy - v3)
 
-Configure for smaller bundle sizes:
+**Note:** The `purge` property is legacy v3 syntax. In v4, tree-shaking is automatic via content paths.
+
+Configure for smaller bundle sizes in v3:
 
 ```javascript
 module.exports = {
@@ -578,13 +580,15 @@ module.exports = {
 }
 ```
 
-### ❌ Don't Forget to Configure safelist for Dynamic Classes
+### ❌ Don't Forget to Configure safelist for Dynamic Classes (Legacy - v3)
+
+**Note:** This pattern applies to v3. In v4, prefer complete class names over safelist.
 
 ```javascript
 // Bad: Dynamic classes won't be included
 <div className={`bg-${color}-500`}>
 
-// Good: Add to safelist
+// Good (v3): Add to safelist
 module.exports = {
   safelist: [
     {
@@ -593,7 +597,7 @@ module.exports = {
   ],
 }
 
-// Better: Use complete class names
+// Better (all versions): Use complete class names
 <div className={color === 'red' ? 'bg-red-500' : 'bg-blue-500'}>
 ```
 
