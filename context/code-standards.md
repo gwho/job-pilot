@@ -193,17 +193,23 @@ export async function discoverJobs(
 ## InsForge Client Usage
 
 ```typescript
-// Browser context — Client Components only
+// Browser context — Client Components only, read-only session
 import { insforge } from "@/lib/insforge-client";
 
-// Server context — Server Components, Route Handlers, Server Actions, Agent
+// Server context — Server Components, Route Handlers, Agent (read-only getCurrentUser())
 import { createInsforgeServer } from "@/lib/insforge-server";
 const insforge = await createInsforgeServer();
+
+// Auth mutations only — Server Actions and Route Handlers (sign-in/sign-up/sign-out/OAuth)
+import { createAuthActions } from "@insforge/sdk/ssr";
+const auth = createAuthActions({ cookies: await cookies() });
 ```
 
 - Never use the browser client in server context
-- Never use the server client in browser context
+- Never use the server client (or `createAuthActions`) in browser context
+- The browser client has no auth mutation methods by design — those run server-side only
 - Always await createInsforgeServer() — it reads cookies asynchronously
+- Get the current user with `insforge.auth.getCurrentUser()` — there is no `getUser()`
 - Always scope every query to the current user_id — never query without a user filter
 
 ---
@@ -245,6 +251,7 @@ All environment variables defined in `.env.local` for development. Never hardcod
 | ------------------------------- | ---------------------- |
 | `NEXT_PUBLIC_INSFORGE_URL`      | lib/insforge-client.ts |
 | `NEXT_PUBLIC_INSFORGE_ANON_KEY` | lib/insforge-client.ts |
+| `NEXT_PUBLIC_APP_URL`           | app/actions/auth.ts (OAuth redirectTo) |
 | `BROWSERBASE_API_KEY`           | lib/browserbase.ts     |
 | `BROWSERBASE_PROJECT_ID`        | lib/browserbase.ts     |
 | `OPENAI_API_KEY`                | agent/ functions       |
@@ -305,7 +312,7 @@ Never install a new package without a clear reason. Before installing anything c
 
 Approved dependencies for this project:
 
-- `@insforge/ssr` — InsForge client
+- `@insforge/sdk` — InsForge client (SSR helpers via the `@insforge/sdk/ssr` and `@insforge/sdk/ssr/middleware` subpaths)
 - `@browserbasehq/sdk` — Browserbase sessions
 - `@browserbasehq/stagehand` — AI browser control
 - `openai` — GPT-4o API

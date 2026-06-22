@@ -7,8 +7,8 @@ Update this file after every completed feature. Any AI agent reading this should
 ## Current Status
 
 **Phase:** Phase 1 — Foundation
-**Last completed:** 01 Homepage
-**Next:** 02 Auth
+**Last completed:** 02 Auth
+**Next:** 03 PostHog Initialization
 
 ---
 
@@ -17,7 +17,7 @@ Update this file after every completed feature. Any AI agent reading this should
 ### Phase 1 — Foundation
 
 - [x] 01 Homepage
-- [ ] 02 Auth
+- [x] 02 Auth
 - [ ] 03 PostHog Initialization
 - [ ] 04 Database Schema
 
@@ -50,10 +50,10 @@ Update this file after every completed feature. Any AI agent reading this should
 
 ## Decisions Made During Build
 
-_Add decisions here as they are made during implementation._
+- **02 Auth**: `context/architecture.md`, `library-docs.md`, and `code-standards.md` referenced a fictional `@insforge/ssr` package and a `middleware.ts` file. Verified against the real published `@insforge/sdk` (v1.4.2, via npm registry + unpkg) and later confirmed via the InsForge MCP once it became available in-session. Corrected all three context files in place: real package is `@insforge/sdk` (SSR helpers at `@insforge/sdk/ssr` and `@insforge/sdk/ssr/middleware`), OAuth is a server-driven PKCE flow (not client-side token-in-URL), get-user method is `getCurrentUser()` not `getUser()`, and Next.js 16 requires `proxy.ts` not `middleware.ts`. Full rationale in `docs/plan/02-auth/explanation.md`.
 
 ---
 
 ## Notes
 
-_Add notes here as the build progresses — workarounds, patterns, anything that differs from the context files._
+- Placeholder pages exist at `/dashboard`, `/profile`, `/find-jobs` purely to prevent 404s from the Feature 02 auth redirect logic (`getCtaHref()` in `lib/auth.ts`) before their real features are built. Each is a one-line "coming soon" Server Component. Replace entirely, don't extend, when 05 Profile Page, 09 Find Jobs Page, and 14 Dashboard Page start.

@@ -32,48 +32,43 @@ Never rely on general training knowledge alone for library APIs — they change 
 
 ### Client vs Server
 
-Two separate instances — never mix them:
+The real package is `@insforge/sdk` (not `@insforge/ssr`). SSR helpers live at the `@insforge/sdk/ssr` and `@insforge/sdk/ssr/middleware` subpaths. Three separate surfaces — never mix them:
 
 ```typescript
 // lib/insforge-client.ts — browser context only
-import { createBrowserClient } from "@insforge/ssr";
+// No auth mutations exposed here by design (signIn/signUp/signOut run server-side
+// so the refresh token cookie stays server-owned/httpOnly).
+import { createBrowserClient } from "@insforge/sdk/ssr";
 
-export const insforge = createBrowserClient(
-  process.env.NEXT_PUBLIC_INSFORGE_URL!,
-  process.env.NEXT_PUBLIC_INSFORGE_ANON_KEY!,
-);
+export const insforge = createBrowserClient(); // reads NEXT_PUBLIC_INSFORGE_URL / NEXT_PUBLIC_INSFORGE_ANON_KEY
 ```
 
 ```typescript
-// lib/insforge-server.ts — server context only
-import { createServerClient } from "@insforge/ssr";
+// lib/insforge-server.ts — server context only, read-only session access
+import { createServerClient } from "@insforge/sdk/ssr";
 import { cookies } from "next/headers";
 
 export const createInsforgeServer = async () => {
-  const cookieStore = await cookies();
-  return createServerClient(
-    process.env.NEXT_PUBLIC_INSFORGE_URL!,
-    process.env.NEXT_PUBLIC_INSFORGE_ANON_KEY!,
-    {
-      cookies: {
-        getAll: () => cookieStore.getAll(),
-        setAll: (cookiesToSet) => {
-          cookiesToSet.forEach(({ name, value, options }) =>
-            cookieStore.set(name, value, options),
-          );
-        },
-      },
-    },
-  );
+  return createServerClient({ cookies: await cookies() });
 };
+```
+
+```typescript
+// app/actions/auth.ts ("use server") and Route Handlers — auth mutations only
+import { createAuthActions } from "@insforge/sdk/ssr";
+
+const auth = createAuthActions({ cookies: await cookies() });
+// or, in a Route Handler with separate request/response cookies:
+// createAuthActions({ requestCookies: request.cookies, responseCookies: response.cookies })
 ```
 
 **Rules:**
 
-- Browser client — Client Components, browser-side auth state, realtime subscriptions
-- Server client — Server Components, API routes, Server Actions, agent functions
+- Browser client — Client Components, browser-side session reads, realtime subscriptions
+- Server client — Server Components, Route Handlers, agent functions (read-only `getCurrentUser()`)
+- Auth Actions (`createAuthActions`) — Server Actions and Route Handlers only, the only place sign-in/sign-up/sign-out/OAuth exchange happen
 - Never use browser client in server context
-- Never use server client in browser context
+- Never use server client (or Auth Actions) in browser context
 
 ---
 
@@ -82,12 +77,64 @@ export const createInsforgeServer = async () => {
 ```typescript
 // Get current user in server context
 const insforge = await createInsforgeServer();
-const {
-  data: { user },
-  error,
-} = await insforge.auth.getUser();
-if (!user) redirect("/login");
+const { data, error } = await insforge.auth.getCurrentUser(); // not getUser()
+if (!data.user) redirect("/login");
 ```
+
+OAuth is a server-driven PKCE flow — the SSR browser client does **not** auto-exchange the callback:
+
+```typescript
+// app/actions/auth.ts ("use server")
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
+import { createAuthActions } from "@insforge/sdk/ssr";
+
+export async function signInWithGoogle() {
+  const cookieStore = await cookies();
+  const auth = createAuthActions({ cookies: cookieStore });
+  const { data, error } = await auth.signInWithOAuth("google", {
+    redirectTo: new URL("/api/auth/callback", process.env.NEXT_PUBLIC_APP_URL).toString(),
+    skipBrowserRedirect: true,
+  });
+  if (error || !data.url || !data.codeVerifier) throw new Error(error?.message ?? "OAuth init failed");
+
+  cookieStore.set("insforge_code_verifier", data.codeVerifier, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: 600,
+  });
+  redirect(data.url);
+}
+```
+
+```typescript
+// app/api/auth/callback/route.ts
+import { cookies } from "next/headers";
+import { NextResponse, type NextRequest } from "next/server";
+import { createAuthActions } from "@insforge/sdk/ssr";
+
+export async function GET(request: NextRequest) {
+  const code = request.nextUrl.searchParams.get("insforge_code");
+  const verifier = (await cookies()).get("insforge_code_verifier")?.value;
+  if (!code || !verifier) return NextResponse.redirect(new URL("/login?error=oauth", request.url));
+
+  const response = NextResponse.redirect(new URL("/dashboard", request.url));
+  const auth = createAuthActions({ requestCookies: request.cookies, responseCookies: response.cookies });
+  const { error } = await auth.exchangeOAuthCode(code, verifier);
+  if (error) return NextResponse.redirect(new URL("/login?error=oauth", request.url));
+
+  response.cookies.delete("insforge_code_verifier");
+  return response;
+}
+```
+
+**Rules:**
+
+- `getCurrentUser()` is the only get-user method — there is no `getUser()`
+- OAuth code verifier is stored in an httpOnly app cookie, never exposed to the browser
+- Session refresh in `proxy.ts` uses `updateSession()` from `@insforge/sdk/ssr/middleware`
 
 ---
 

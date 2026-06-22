@@ -1,0 +1,13 @@
+# Explanation — "Start for free" 404
+
+## Why this was Failure Mode 1, not 2 or 3
+
+Failure Mode 2 (polluted session) requires multiple stacked, worsening fix attempts — this was the first pass at the problem, with no prior failed attempts compounding it. Failure Mode 3 (wrong foundation) requires the implementation itself to be conceptually wrong — but the auth redirect logic (`getCtaHref()`) was correct; it matched the build-plan spec exactly. The only thing "wrong" was a forward reference to a page that hadn't been built yet, which isn't a misunderstanding of a requirement — it's the expected shape of an incrementally built, multi-phase app. That combination (isolated, first attempt, clear and specific symptom, rest of the app fine) is the textbook definition of Failure Mode 1.
+
+## Why the `proxy.ts`/`middleware.ts` claim was wrong, and how it was caught
+
+An exploration subagent, reading the codebase without re-running anything, reasoned from a stale assumption: that Next.js still uses `middleware.ts` as the only valid file name, and therefore a file named `proxy.ts` must be inert. This is a plausible-sounding claim that happens to be backwards for this specific Next.js version (16.2.9) — Next 16 deprecated `middleware.ts` in favor of `proxy.ts`, which is the *opposite* of what was claimed. The way this was caught: rather than trusting the subagent's static-analysis claim, it was tested empirically (`curl` against a running dev server, observing a real `307` redirect) and cross-checked against a primary source already present in the project (`node_modules/next/dist/docs/.../proxy.md`, which states the rename outright). Static reasoning about "what should be true" lost to "what is actually true," confirmed twice, independently.
+
+## Why "minimal stub" was an incomplete read of the fix
+
+The fix was scoped to its triggering symptom — a 404 — and successfully eliminated it. But "minimal" was interpreted as "as little code as possible" rather than "as little as possible while still meeting the page's actual baseline requirements." The app's own `ui-rules.md` already established that every page uses a top navbar and every content section lives in a card — those aren't new requirements invented later, they were already true when the stub was written, just not checked against at the time. This is the difference a dedicated review pass (`/project-review`) is for: a fix focused on "did the error go away" will not, by itself, ask "does this match the rest of the system." Both checks matter, but they're different checks, run at different times, for good reason — conflating them risks under-scoping the original fix while debugging is still in progress.

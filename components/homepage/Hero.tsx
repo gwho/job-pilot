@@ -1,7 +1,10 @@
 import Image from "next/image";
 import Link from "next/link";
+import { getCtaHref } from "@/lib/auth";
 
-export function Hero() {
+export async function Hero() {
+  const ctaHref = await getCtaHref();
+
   return (
     <section className="w-full bg-background pt-20 pb-0">
       <div className="max-w-[1440px] mx-auto px-8 flex flex-col items-center text-center">
@@ -23,13 +26,13 @@ export function Hero() {
 
         <div className="flex items-center gap-4 mb-14">
           <Link
-            href="/login"
+            href={ctaHref}
             className="bg-accent text-accent-foreground text-sm font-medium px-6 py-3 rounded-md hover:bg-accent-dark transition-colors"
           >
             Get Started
           </Link>
           <Link
-            href="/login"
+            href={ctaHref}
             className="bg-surface border border-border text-text-primary text-sm font-medium px-6 py-3 rounded-md hover:bg-surface-secondary transition-colors"
           >
             Find Your First Match
