@@ -163,6 +163,15 @@ To save memory at the end of a session, run /remember save.
 
 Read `memory.md` first. Then check for these specific context files if they exist and read only those:
 
+- `context/project-overview.md` — project overview
+- `context/architecture.md` — architecture
+- `context/ui-tokens.md` — UI tokens
+- `context/ui-rules.md` — UI rules
+- `context/ui-registry.md` — UI registry
+- `context/code-standards.md` — code standards
+- `context/library-docs.md` — library docs
+- `context/build-plan.md` — build plan
+- `context/progress-tracker.md` — progress tracker
 - `CLAUDE.md`, `.claude/context.md` — Claude Code
 - `.github/copilot-instructions.md` — GitHub Copilot
 - `.cursorrules`, `.cursor/rules/` — Cursor

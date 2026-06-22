@@ -8,15 +8,32 @@ import { captureServerEvent } from "@/lib/posthog-server";
 
 const CODE_VERIFIER_COOKIE = "insforge_code_verifier";
 type OAuthResult = Awaited<ReturnType<ReturnType<typeof createAuthActions>["signInWithOAuth"]>>;
+type SignOutResult = Awaited<ReturnType<ReturnType<typeof createAuthActions>["signOut"]>>;
 
 async function startOAuth(provider: "google" | "github"): Promise<never> {
   const cookieStore = await cookies();
   const auth = createAuthActions({ cookies: cookieStore });
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL?.trim();
+  let appOrigin: URL;
   let result: OAuthResult;
+
+  if (!appUrl) {
+    throw new Error(
+      "Missing NEXT_PUBLIC_APP_URL. Set it to your app origin, for example http://localhost:3000.",
+    );
+  }
+
+  try {
+    appOrigin = new URL(appUrl);
+  } catch {
+    throw new Error(
+      "Invalid NEXT_PUBLIC_APP_URL. Set it to a valid app origin, for example http://localhost:3000.",
+    );
+  }
 
   try {
     result = await auth.signInWithOAuth(provider, {
-      redirectTo: new URL("/api/auth/callback", process.env.NEXT_PUBLIC_APP_URL).toString(),
+      redirectTo: new URL("/api/auth/callback", appOrigin).toString(),
       skipBrowserRedirect: true,
     });
   } catch (error) {
@@ -52,6 +69,8 @@ export async function signInWithGithub(): Promise<void> {
 
 export async function signOut(): Promise<never> {
   let userId: string | undefined;
+  let result: SignOutResult;
+
   try {
     const insforge = await createInsforgeServer();
     const { data } = await insforge.auth.getCurrentUser();
@@ -63,13 +82,18 @@ export async function signOut(): Promise<never> {
   try {
     const cookieStore = await cookies();
     const auth = createAuthActions({ cookies: cookieStore });
-    const { error } = await auth.signOut();
-
-    if (error) {
-      console.error("[actions/auth]", error);
-    }
+    result = await auth.signOut();
   } catch (error) {
     console.error("[actions/auth]", error);
+    redirect("/login?error=signout");
+  }
+
+  const { data, error } = result;
+  void data;
+
+  if (error) {
+    console.error("[actions/auth]", error);
+    redirect("/login?error=signout");
   }
 
   if (userId) {

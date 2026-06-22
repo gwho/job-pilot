@@ -1,6 +1,7 @@
+import { cache } from "react";
 import { createInsforgeServer } from "@/lib/insforge-server";
 
-export async function getCtaHref(): Promise<string> {
+const getCachedCtaHref = cache(async (): Promise<string> => {
   try {
     const insforge = await createInsforgeServer();
     const { data } = await insforge.auth.getCurrentUser();
@@ -8,4 +9,8 @@ export async function getCtaHref(): Promise<string> {
   } catch {
     return "/login";
   }
+});
+
+export async function getCtaHref(): Promise<string> {
+  return getCachedCtaHref();
 }
