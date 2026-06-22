@@ -44,8 +44,8 @@ Rules are prioritized by impact:
 
 **Design Tokens:**
 
-- Only use tokens from `tailwind.config.ts` in `@playground-ui` (`tokens-use-existing`)
-- Never modify design tokens or `tailwind.config.ts` (`tokens-no-modification`)
+- Only use tokens from `globals.css` `@theme` directive (`tokens-use-existing`)
+- Never modify design tokens in `globals.css` (`tokens-no-modification`)
 
 ### High-Impact Patterns
 

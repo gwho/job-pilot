@@ -13,6 +13,46 @@ allowed-tools:
 
 # Tailwind CSS - Configuration
 
+## IMPORTANT: Tailwind v4 CSS-First (This Project)
+
+**This project uses Tailwind v4 with CSS-first configuration.** All design tokens are defined in `app/globals.css` using the `@theme` directive. Custom tokens defined in `tailwind.config.ts` are IGNORED in v4 CSS-first projects.
+
+### Tailwind v4 CSS-First Token Definition
+
+```css
+/* app/globals.css */
+@import "tailwindcss";
+
+@theme {
+  /* Custom colors */
+  --color-brand: #3b82f6;
+  --color-accent: #7c5cfc;
+
+  /* Custom spacing */
+  --spacing-128: 32rem;
+
+  /* Custom fonts */
+  --font-sans: "Inter", sans-serif;
+
+  /* Custom radius */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+}
+```
+
+Tailwind v4 automatically generates utility classes from `@theme` variables:
+- `--color-accent` becomes `bg-accent`, `text-accent`, `border-accent`
+- `--spacing-128` becomes `p-128`, `m-128`, `gap-128`
+- `--radius-md` becomes `rounded-md`
+
+**WARNING:** Do NOT define custom colors or tokens in `tailwind.config.ts` for this project. They will be ignored. Always use `@theme` in `app/globals.css`.
+
+---
+
+## Legacy JavaScript Configuration (v3 and older)
+
+The following documentation covers Tailwind v3 patterns using JavaScript configuration files. These patterns are NOT used in this project but are documented for reference.
+
 Tailwind CSS is highly customizable through its configuration file, allowing you to define your design system, extend the default theme, and configure plugins.
 
 ## Key Concepts

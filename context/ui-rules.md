@@ -32,7 +32,7 @@ The `--font-sans` variable is already declared in `@theme` in globals.css. Apply
 Three nav items: Dashboard, Find Jobs, Profile.
 
 - Active item: `color: #7C5CFC`, font-weight 500, 14px
-- Inactive item: `color: #4A5565`, font-weight 500, 14px
+- Inactive item: `color: #364153`, font-weight 500, 14px
 - No underline — active state is color change only
 - Navbar always white background, full viewport width
 

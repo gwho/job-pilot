@@ -7,7 +7,7 @@ tags: tokens, design-tokens, tailwind-config, modification, forbidden
 
 ## Never Modify Design Tokens
 
-Never modify the design tokens in `packages/playground-ui/src/ds/tokens/` or the `tailwind.config.ts` file without explicit approval.
+Never modify the design tokens in the `@theme` directive in `app/globals.css` without explicit approval.
 
 **Why this matters:**
 
@@ -17,29 +17,14 @@ Never modify the design tokens in `packages/playground-ui/src/ds/tokens/` or the
 
 **Incorrect (modifying tokens):**
 
-```typescript
-// DON'T: Adding new colors to tokens/colors.ts
-export const Colors = {
-  // ... existing colors
-  myNewColor: '#FF5500', // FORBIDDEN
-};
+```css
+/* DON'T: Adding new colors to @theme in globals.css */
+@theme {
+  --color-my-new-color: #FF5500; /* FORBIDDEN */
 
-// DON'T: Adding new spacing values to tokens/spacings.ts
-export const Spacings = {
-  // ... existing spacings
-  '13': '3.25rem', // FORBIDDEN
-};
-
-// DON'T: Modifying tailwind.config.ts
-export default {
-  theme: {
-    extend: {
-      colors: {
-        customColor: '#123456', // FORBIDDEN
-      },
-    },
-  },
-};
+  /* DON'T: Adding new spacing values */
+  --spacing-13: 3.25rem; /* FORBIDDEN */
+}
 ```
 
 **Correct (requesting token changes):**
@@ -53,5 +38,4 @@ If a new token is needed:
 
 **Protected files:**
 
-- `packages/playground-ui/src/ds/tokens/*.ts`
-- `packages/playground-ui/tailwind.config.ts`
+- `app/globals.css` (specifically the `@theme` directive block)

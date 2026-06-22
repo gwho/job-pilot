@@ -42,7 +42,9 @@ Use the `@theme` directive for CSS-based configuration:
 
 ---
 
-## JavaScript Configuration (Legacy)
+## JavaScript Configuration (Not Used in This Project - Legacy Reference Only)
+
+The following JavaScript configuration pattern is from Tailwind v3 and is NOT used in this project. This project uses Tailwind v4 CSS-first approach with `@theme` in globals.css.
 
 ```javascript
 /** @type {import('tailwindcss').Config} */
@@ -75,6 +77,10 @@ export default {
 ---
 
 ## Vite Integration (v4.1+)
+
+This project uses Tailwind v4 CSS-first approach with Next.js and PostCSS. All configuration is in `app/globals.css` using the `@theme` directive.
+
+For Vite projects using Tailwind v4:
 
 ```javascript
 // vite.config.ts

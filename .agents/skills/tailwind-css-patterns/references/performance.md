@@ -68,28 +68,25 @@ export default {
 
 ## Production Build Optimization
 
-### PurgeCSS Configuration
+### Tailwind v4 Oxide Engine
+
+Tailwind v4 uses the new Oxide engine with automatic content detection via the `@tailwindcss/postcss` plugin. No manual purge configuration is needed.
 
 ```javascript
-// tailwind.config.js
-module.exports = {
-  purge: {
-    enabled: process.env.NODE_ENV === 'production',
-    content: [
-      './src/**/*.html',
-      './src/**/*.jsx',
-      './src/**/*.tsx',
-    ],
-    options: {
-      safelist: [
-        'bg-red-500',
-        'text-center',
-        // Classes that shouldn't be purged
-      ],
-    },
+// postcss.config.mjs
+export default {
+  plugins: {
+    '@tailwindcss/postcss': {},
   },
 }
 ```
+
+The Oxide engine automatically:
+- Detects all class usage in your source files
+- Generates only the CSS you actually use
+- Optimizes output for production builds
+
+No `purge` or `safelist` configuration is required in Tailwind v4.
 
 ### Minification
 

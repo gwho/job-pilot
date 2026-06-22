@@ -204,7 +204,7 @@ Responsive typography:
 ### Opacity
 
 ```html
-<div class="bg-blue-500 bg-opacity-50">
+<div class="bg-blue-500/50">
   Semi-transparent blue
 </div>
 ```

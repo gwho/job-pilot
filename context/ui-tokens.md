@@ -201,7 +201,7 @@ Match score bars and indicators use gradient stops based on score range:
 | Body / activity text | 14px | 500    | 20px        | `text-text-primary`   |
 | Trend badge text     | 12px | 500    | 16px        | `text-success-darker` |
 | Timestamp / muted    | 12px | 400    | 16px        | `text-text-muted`     |
-| Chart axis labels    | 12px | 400    | 15px        | `#9CA3AF`             |
+| Chart axis labels    | 12px | 400    | 15px        | `text-text-muted`     |
 | Stat subtitle        | 12px | 400    | 16px        | `text-text-muted`     |
 
 Font family: **Inter** — import from Google Fonts or use next/font/google.
@@ -327,7 +327,7 @@ Dot size: 8px inner, 16px outer with white border
 | Resume Tailoring Activity (bars) | `#61A8FF`                                                       |
 | Match Score Distribution (bars)  | `#10B981`                                                       |
 | Chart grid lines                 | `1px dashed #E7EAF3`                                            |
-| Chart axis labels                | `#9CA3AF`, 12px                                                 |
+| Chart axis labels                | `text-text-muted`, 12px                                         |
 
 ### Logo
 

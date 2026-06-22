@@ -82,14 +82,44 @@ function ProductCard({ product }: { product: Product }) {
 </div>
 ```
 
-Enable dark mode in tailwind.config.js:
+### Dark Mode in Tailwind v4 CSS-First Projects
 
-```javascript
-module.exports = {
-  darkMode: 'class', // or 'media'
-  // ...
+For CSS-first Tailwind v4 projects (like this one, where themes are defined via `@theme` in globals.css), dark mode is configured in CSS using `@media` rules or by defining dark theme tokens:
+
+```css
+/* app/globals.css */
+@import "tailwindcss";
+
+@theme {
+  --color-background: #ffffff;
+  --color-text: #000000;
+}
+
+@media (prefers-color-scheme: dark) {
+  @theme {
+    --color-background: #1a1a1a;
+    --color-text: #ffffff;
+  }
 }
 ```
+
+Or using class-based dark mode with CSS variables:
+
+```css
+@theme {
+  --color-background: #ffffff;
+  --color-text: #000000;
+}
+
+.dark {
+  @theme {
+    --color-background: #1a1a1a;
+    --color-text: #ffffff;
+  }
+}
+```
+
+This is different from the legacy `darkMode` option in tailwind.config.js (v3).
 
 ### Dark Mode Toggle (React)
 
