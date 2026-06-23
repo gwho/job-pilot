@@ -209,9 +209,16 @@ export function ProfileForm({ profile, email }: Props) {
   const [isUploading, startUpload] = useTransition();
   const [isViewingResume, startViewResume] = useTransition();
   const [isExtracting, startExtract] = useTransition();
+  const [isGenerating, startGenerate] = useTransition();
 
   // Extraction feedback
   const [extractResult, setExtractResult] = useState<{
+    success: boolean;
+    error?: string;
+  } | null>(null);
+
+  // Generation feedback
+  const [generateResult, setGenerateResult] = useState<{
     success: boolean;
     error?: string;
   } | null>(null);
@@ -385,6 +392,22 @@ export function ProfileForm({ profile, email }: Props) {
       }
       applyExtraction(result.data);
       setExtractResult({ success: true });
+    });
+  }
+
+  function handleGenerate() {
+    setGenerateResult(null);
+    startGenerate(async () => {
+      const res = await fetch("/api/resume/generate", { method: "POST" });
+      const result = (await res.json()) as
+        | { success: true }
+        | { success: false; error: string };
+      if (!result.success) {
+        setGenerateResult({ success: false, error: result.error });
+        return;
+      }
+      setResumeFileName("AI Generated Resume.pdf");
+      setGenerateResult({ success: true });
     });
   }
 
@@ -644,11 +667,22 @@ export function ProfileForm({ profile, email }: Props) {
             </span>
             <button
               type="button"
-              className="text-sm font-medium text-text-secondary hover:text-text-primary transition-colors"
+              onClick={handleGenerate}
+              disabled={!profile?.is_complete || isGenerating}
+              title={!profile?.is_complete ? "Complete your profile first." : undefined}
+              className="text-sm font-medium text-text-secondary hover:text-text-primary transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              Generate Resume from Profile
+              {isGenerating ? "Generating..." : "Generate Resume from Profile"}
             </button>
           </div>
+          {generateResult?.success && (
+            <p className="text-sm text-success mt-2">
+              Resume generated — click &ldquo;View current resume&rdquo; to open it.
+            </p>
+          )}
+          {generateResult && !generateResult.success && (
+            <p className="text-sm text-error mt-2">{generateResult.error}</p>
+          )}
         </div>
 
         {resumeFileName && (

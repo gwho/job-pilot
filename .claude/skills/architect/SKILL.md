@@ -13,6 +13,7 @@ Before saying anything, take stock of what already exists:
 
 - Read the feature description the developer gave you
 - Read any context files, documentation, or existing code available
+- **Always read `context/library-docs.md` when the feature touches AI calls, storage, or any third-party integration.** This file documents project-specific values — Gemini temperature, max_tokens, storage patterns, API endpoints — that differ from general defaults. Never guess these values from general knowledge; always defer to what is documented there.
 - Build a clear picture of what needs to be built and what already exists
 
 Do not ask about anything already clearly answered by existing documentation. A good senior engineer does their homework before the meeting.
