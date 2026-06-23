@@ -1,73 +1,60 @@
-# Memory — Feature 06 Profile Save Logic + Review Fixes
+# Memory — Feature 07 AI Profile Extraction + Tutorial Refactor Session
 
-Last updated: 2026-06-23
+Last updated: 2026-06-24
 
 ## What was built
 
-### Feature 06 — Profile Save Logic (completed wrap-up this session)
-- `lib/profile-utils.ts` — `calculateCompletion()` shared between ProfileForm useMemo and saveProfile Server Action; single source of truth for completion logic
-- `types/index.ts` — `MissingField` named union type added; `resume_pdf_key`, `linkedin_connected`, `is_tailored`, `resume_pdf_filename` added to `Profile` interface
-- `actions/profile.ts` — `saveProfile()` upserts all text fields, calculates `is_complete`, fires `profile_completed` PostHog event on first complete transition; `uploadResume()` removes old file then uploads new PDF, persists `resume_pdf_key`, `resume_pdf_url`, `resume_pdf_filename`; `getResumeSignedUrl()` generates 1-hour signed URL for private bucket preview
-- `app/profile/page.tsx` — Server Component fetches real profile from DB, passes as `profile: Profile | null` prop + `email` from auth session
-- `components/profile/ProfileForm.tsx` — replaced mock data with prop-based initialization; wired `saveProfile` and `uploadResume` via `useTransition`; added `handleViewResume` + "View current resume" button; `resumeFileName` state now initialized from `profile?.resume_pdf_filename`
-- `scripts/schema.sql` — documented new columns
-- `context/library-docs.md` — corrected wrong storage pattern (no `upsert: true`; must `remove(key)` then `upload()` for private bucket; use `createSignedUrl` not `getPublicUrl`)
-- `context/ui-registry.md` — Server Action + useTransition pattern added
-- `context/progress-tracker.md` — Feature 06 marked complete including review fix note
-- `docs/architect/06-profile-save/discussion.md`, `decisions.md` — architect session record
-- `docs/plan/06-profile-save/plan.md`, `explanation.md`, `ai-discussion-topics.md` — feature learning docs
-- `docs/project-review/06-resume-preview/plan.md`, `explanation.md`, `ai-discussion-topics.md` — review fix docs
+### Feature 07 — AI Profile Extraction from Resume (completed, two recover sessions required)
 
-### DB changes applied (via InsForge MCP)
-```sql
-ALTER TABLE profiles ADD COLUMN IF NOT EXISTS linkedin_connected boolean NOT NULL DEFAULT false;
-ALTER TABLE profiles ADD COLUMN IF NOT EXISTS is_tailored boolean NOT NULL DEFAULT false;
-ALTER TABLE profiles ADD COLUMN IF NOT EXISTS resume_pdf_key TEXT;
-ALTER TABLE profiles ADD COLUMN IF NOT EXISTS resume_pdf_filename TEXT;
-```
+**Code files modified:**
+- `next.config.ts` — added `serverExternalPackages: ["pdf-parse"]` to fix Turbopack ESM resolution
+- `agent/extractor.ts` — import changed from `import pdf from "pdf-parse"` to `import { PDFParse } from "pdf-parse"`; usage changed from `await pdf(buffer)` to `new PDFParse({ data: buffer })` → `await parser.getText()`
+
+**Feature is fully working:** Extract from Resume button → pdf-parse extracts text → Gemini via openai SDK returns structured JSON → `applyExtraction()` populates form fields null-safely → user reviews and saves manually.
+
+### Tutorial writes (this session)
+
+- `docs/tutorials/10-profile-extraction/README.md` — Feature 07 tutorial; 6 Parts; all 15 ai-discussion-topics.md questions woven into Part checkpoints; no quiz section
+- `docs/tutorials/11-profile-extraction-architect-deep-dive/README.md` — architect deep-dive for Feature 07; 6 Parts; covers AI boundary decision, state ownership, server-side download, null contract, enum constraints, no-auto-save quality gate
+- `docs/tutorials/12-pdf-parse-v2-migration/README.md` — consolidated recover tutorial for both pdf-parse sessions; 6 Parts + Intro; all 25 discussion questions from both recover folders woven organically into Part checkpoints
+
+### Tutorial refactors (this session)
+
+- `docs/tutorials/04-recover-start-for-free-404/README.md` — converted all inline checkpoint answers to `<details>` blocks; added 2 new checkpoints from discussion Q's (Mode 1 vs 3 with no stack trace; what if getCtaHref had a typo); absorbed self-check quiz questions into Parts; removed quiz section
+- `docs/tutorials/10-profile-extraction/README.md` — added 9 new checkpoints from 15 discussion questions (distributed across all 6 Parts); absorbed 5 self-check quiz questions into Parts; removed quiz section
+
+### Skill file update
+
+- `/Users/jessejames/.claude/skills/tutorial/SKILL.md` — removed "Self-check quiz" step (Step 4 item 4 replaced with "Question mapping"); removed Section 7 (Self-check quiz) from Required sections; renumbered remaining sections; added quality rule: discussion questions must be woven into Parts organically, no standalone quiz section
+
+### Recover session docs
+
+- `docs/recover/pdf-parse-esm-default-export/` — Session 1: build error diagnosis, resolution, ai-discussion-topics (13 questions), plan
+- `docs/recover/pdf-parse-v2-api-mismatch/` — Session 2: runtime error diagnosis, resolution, ai-discussion-topics (12 questions), plan
 
 ## Decisions made
 
-- **Shared `calculateCompletion` utility**: Lives in `lib/profile-utils.ts`. Both the client ring display (useMemo in ProfileForm) and the server action import it. Never duplicate this logic.
-- **`resume_pdf_filename` persisted to DB**: Not derived from key or kept in state — must survive page reloads. State initializes from `profile?.resume_pdf_filename ?? (profile?.resume_pdf_key ? "resume.pdf" : null)`.
-- **Signed URLs generated on demand**: `getResumeSignedUrl()` re-reads `resume_pdf_key` from DB every call (not cached state). Expires in 3600 seconds. Never stored.
-- **Email sourced from auth session only**: `saveProfile` reads `authData.user.email` — never from form payload. Prevents client-side spoofing.
-- **`is_complete` read before upsert**: Lets the PostHog gate compare previous vs new state in one round trip.
-- **Resume upload fires on file pick (separate from Save)**: Two distinct `useTransition` instances — `startUpload` and `startSave` — give independent pending states.
-- **`insforge.database.from(...)` not `insforge.from(...)`**: Verified from actual SDK types. The `library-docs.md` pattern was wrong. Fixed.
-- **`upload()` has no `upsert` option**: SDK auto-renames on conflict. Pattern is always: read `resume_pdf_key` from DB → `remove(key)` → `upload()` → save new key.
-- **"Generate Resume from Profile" button is an intentional stub**: Confirmed by project-review check against `build-plan.md`. It's the Feature 08 placeholder (Resume PDF Generation). No action needed until Feature 08 starts.
+- **`pdf-parse@2.4.5` v2.x requires two fixes, in order:** `serverExternalPackages` (bundler layer) must come first, then the named class import (API layer). The build fix doesn't fix the runtime; the runtime fix won't compile without the build fix.
+- **Tutorial checkpoint style locked:** All `ai-discussion-topics.md` questions go inside Part checkpoints with `<details>` answer blocks — never in a standalone Self-check quiz section. This makes tutorials usable as interactive agent sessions.
+- **Tutorial 10 and Tutorial 11 are separate documents:** Tutorial 10 = feature walkthrough. Tutorial 11 = architect deep-dive. The decision to split (vs. consolidate) is recorded in `docs/tutorials/11-profile-extraction-architect-deep-dive/README.md`.
 
 ## Problems solved
 
-- **`insforge.from()` doesn't exist**: Real API is `insforge.database.from()`. Caught during Feature 06 implementation.
-- **`upsert: true` doesn't exist in storage SDK**: `library-docs.md` was wrong. Correct pattern is remove-then-upload.
-- **`resume_pdf_url` is not publicly accessible**: `resumes` bucket is private. `getPublicUrl()` returns 403. Fixed with `createSignedUrl(key, 3600)` in a new Server Action.
-- **Filename lost on page reload**: `resumeFileName` was local state initialized to hardcoded `"Resume on file"`. Fixed by persisting `resume_pdf_filename` to DB and reading it on page load.
-- **6 accessibility errors in ProfileForm**: Select elements and disabled email input had no `aria-label` or `title`. Fixed by adding both attributes to each flagged element.
-- **Unused variable lint warning**: `percentage: _` in destructuring in `actions/profile.ts`. Fixed by only destructuring `missingFields`.
+- **pdf-parse ESM build error:** `pdf-parse@2.4.5` is ESM-first. Turbopack follows `"import"` condition → ESM entry → re-exports pdfjs-dist geometry types (Rectangle, etc.), no default export. Fix: `serverExternalPackages: ["pdf-parse"]` routes resolution to Node.js at runtime via CJS entry.
+- **pdf-parse runtime "Internal server error":** v2.x CJS entry exports named class `PDFParse`, not a default function. `import pdf from "pdf-parse"` → `pdf` is `undefined` → `await pdf(buffer)` throws `TypeError`. Fix: `import { PDFParse }` + `new PDFParse({ data: buffer })` + `await parser.getText()`.
+- **Tutorial duplicate prevention:** When `/tutorial` was invoked twice for the same feature (once on architect folder, once on plan folder), established pattern: Tutorial N = feature walkthrough (from plan/), Tutorial N+1 = architect deep-dive (from architect/). Documented in `feedback_tutorial-skill-invocation-choice.md` memory.
 
 ## Current state
 
-- Feature 06 fully complete with all review fixes applied. Lint is clean.
-- Profile page: form pre-fills from DB, save works, upload works, "View current resume" generates signed URL and opens PDF in new tab, filename persists across reloads.
-- `resumes` storage bucket is private — signed URL is the only way to serve files.
-- Progress tracker: Feature 06 ✅, next → Feature 07 AI Profile Extraction from Resume.
+- Feature 07 fully working end to end. Build is clean. No lint errors.
+- Tutorials 10, 11, 12 written. Tutorials 04 and 10 refactored to organic-weaving style.
+- `/tutorial` skill updated — all future tutorials will use the organic checkpoint pattern with no quiz section.
+- Progress tracker: Feature 07 ✅. Next → Feature 08.
 
 ## Next session starts with
 
-Begin **Feature 07: AI Profile Extraction from Resume**.
-
-Key steps per build plan:
-- "Extract from Resume" button appears after resume is uploaded (ProfileForm already has the upload zone — add the button there)
-- `pdf-parse` extracts raw text from the uploaded PDF buffer via a Server Action or API route
-- If text is empty or too short → return error: "Could not extract text from this PDF. Please try a different file."
-- GPT-4o reads extracted text and returns structured JSON matching all profile field names
-- ProfileForm fields populate with extracted data (user reviews before saving)
-- User saves manually after reviewing
-
-Run `/architect feature 07` before starting — the AI extraction flow has enough edge cases (short PDF, scanned image PDF, partial extraction) to warrant planning before coding.
+Begin **Feature 08** — check `context/build-plan.md` and `context/progress-tracker.md` for the exact feature name and scope. Run `/architect feature 08` before any implementation.
 
 ## Open questions
 
-- None — all open questions from this session resolved.
+- None from this session.

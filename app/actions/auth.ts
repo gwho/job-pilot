@@ -88,8 +88,7 @@ export async function signOut(): Promise<never> {
     redirect("/login?error=signout");
   }
 
-  const { data, error } = result;
-  void data;
+  const { error } = result;
 
   if (error) {
     console.error("[actions/auth]", error);
