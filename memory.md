@@ -1,59 +1,54 @@
-# Memory — Feature 07 AI Profile Extraction + Tutorial Refactor Session
+# Memory — Feature 08 Complete + Tutorial and Docs Catch-Up Session
 
-Last updated: 2026-06-24
+Last updated: 2026-06-25
 
 ## What was built
 
-### Feature 07 — AI Profile Extraction from Resume (completed, two recover sessions required)
+### Feature 08 — Resume PDF Generation from Profile (complete, was already built)
 
-**Code files modified:**
-- `next.config.ts` — added `serverExternalPackages: ["pdf-parse"]` to fix Turbopack ESM resolution
-- `agent/extractor.ts` — import changed from `import pdf from "pdf-parse"` to `import { PDFParse } from "pdf-parse"`; usage changed from `await pdf(buffer)` to `new PDFParse({ data: buffer })` → `await parser.getText()`
-
-**Feature is fully working:** Extract from Resume button → pdf-parse extracts text → Gemini via openai SDK returns structured JSON → `applyExtraction()` populates form fields null-safely → user reviews and saves manually.
+All code fully working before this session. Documented in `context/progress-tracker.md` and `docs/plan/08-resume-pdf-generation/`. Key files:
+- `agent/resume-template.tsx` — @react-pdf `ResumeDocument` component (header, summary, skills, experience, education)
+- `agent/pdf-generator.tsx` — Gemini call (temp 0.7, max_tokens 1000) + `renderToBuffer()` → `Buffer`
+- `app/api/resume/generate/route.ts` — POST handler: auth → profile fetch → `is_complete` guard → generate → remove-then-upload → partial upsert (`resume_pdf_key`, `resume_pdf_url`, `resume_pdf_filename: "AI Generated Resume.pdf"`)
+- `next.config.ts` — `serverExternalPackages: ["pdf-parse", "@react-pdf/renderer"]`
+- `components/profile/ProfileForm.tsx` — `isGenerating` transition, button disabled when `!profile.is_complete`, local state update for filename after generation
 
 ### Tutorial writes (this session)
 
-- `docs/tutorials/10-profile-extraction/README.md` — Feature 07 tutorial; 6 Parts; all 15 ai-discussion-topics.md questions woven into Part checkpoints; no quiz section
-- `docs/tutorials/11-profile-extraction-architect-deep-dive/README.md` — architect deep-dive for Feature 07; 6 Parts; covers AI boundary decision, state ownership, server-side download, null contract, enum constraints, no-auto-save quality gate
-- `docs/tutorials/12-pdf-parse-v2-migration/README.md` — consolidated recover tutorial for both pdf-parse sessions; 6 Parts + Intro; all 25 discussion questions from both recover folders woven organically into Part checkpoints
+- `docs/tutorials/14-resume-pdf-generation/README.md` — Tutorial 14 for Feature 08; 6 Parts; all 18 ai-discussion-topics.md questions woven as inline checkpoints; covers `serverExternalPackages`, Yoga layout constraints, Gemini temperature rationale, Buffer→Blob three-attempt type error diagnosis, server-side `is_complete` guard, remove-then-upload, partial upsert, and stale form state vs `revalidatePath`
 
-### Tutorial refactors (this session)
+### Feature 06 doc rewrites (this session)
 
-- `docs/tutorials/04-recover-start-for-free-404/README.md` — converted all inline checkpoint answers to `<details>` blocks; added 2 new checkpoints from discussion Q's (Mode 1 vs 3 with no stack trace; what if getCtaHref had a typo); absorbed self-check quiz questions into Parts; removed quiz section
-- `docs/tutorials/10-profile-extraction/README.md` — added 9 new checkpoints from 15 discussion questions (distributed across all 6 Parts); absorbed 5 self-check quiz questions into Parts; removed quiz section
+- `docs/plan/06-profile-save/explanation.md` — fully rewritten from thin bullet Q&A to 9-section narrative prose matching `docs/plan/02-auth/explanation.md` gold standard. Covers: full save loop, `calculateCompletion` in `lib/`, two-prop email separation, pre-upsert `is_complete` read, `'' → null` coercion, remove-then-upload, `FormData` necessity, four-state PostHog gate, three independent `useTransition` instances
+- `docs/tutorials/07-profile-save/README.md` — fully regenerated; 7 Parts; all 12 ai-discussion-topics.md questions as inline `**Checkpoint:**` blocks with `<details>` answers; no separate quiz section
 
-### Skill file update
+### Skill check (this session)
 
-- `/Users/jessejames/.claude/skills/tutorial/SKILL.md` — removed "Self-check quiz" step (Step 4 item 4 replaced with "Question mapping"); removed Section 7 (Self-check quiz) from Required sections; renumbered remaining sections; added quality rule: discussion questions must be woven into Parts organically, no standalone quiz section
-
-### Recover session docs
-
-- `docs/recover/pdf-parse-esm-default-export/` — Session 1: build error diagnosis, resolution, ai-discussion-topics (13 questions), plan
-- `docs/recover/pdf-parse-v2-api-mismatch/` — Session 2: runtime error diagnosis, resolution, ai-discussion-topics (12 questions), plan
+- `/feature-docs` skill is already globally available at `~/.claude/skills/feature-docs/SKILL.md` — the revised narrative-prose `explanation.md` format is the live version used by all projects
 
 ## Decisions made
 
-- **`pdf-parse@2.4.5` v2.x requires two fixes, in order:** `serverExternalPackages` (bundler layer) must come first, then the named class import (API layer). The build fix doesn't fix the runtime; the runtime fix won't compile without the build fix.
-- **Tutorial checkpoint style locked:** All `ai-discussion-topics.md` questions go inside Part checkpoints with `<details>` answer blocks — never in a standalone Self-check quiz section. This makes tutorials usable as interactive agent sessions.
-- **Tutorial 10 and Tutorial 11 are separate documents:** Tutorial 10 = feature walkthrough. Tutorial 11 = architect deep-dive. The decision to split (vs. consolidate) is recorded in `docs/tutorials/11-profile-extraction-architect-deep-dive/README.md`.
+- **Feature 08 Buffer → Blob conversion:** `new Uint8Array(result.buffer)` is required before wrapping in `new Blob()`. Passing `Buffer` directly or via `new Blob([buffer])` both fail TypeScript — `Buffer.buffer` is `ArrayBufferLike` (union includes `SharedArrayBuffer`), which `Blob`'s constructor rejects. `new Uint8Array(typedArray)` creates a copy with a fresh `ArrayBuffer`, satisfying `BlobPart`. Documented in `docs/plan/08-resume-pdf-generation/explanation.md` Section 3.
+- **Feature 08 storage upload:** InsForge `storage.upload()` takes exactly 2 arguments. `library-docs.md` had an incorrect `{ upsert: true }` third-argument example — build caught it. Remove-then-upload is the correct pattern; `upsert` does not exist in the SDK.
+- **Tutorial numbering:** Tutorial 14 is the Feature 08 tutorial. The tutorial number sequence skips some integers because architect deep-dives and recover tutorials occupy slots 11, 12, 13, etc.
+- **Explanation.md narrative standard:** All `explanation.md` files must use numbered sections with flowing prose paragraphs (matching `docs/plan/02-auth/explanation.md`). Feature 06 was the only existing file that didn't meet this bar — now fixed. Features 01–05 were already acceptable quality.
 
 ## Problems solved
 
-- **pdf-parse ESM build error:** `pdf-parse@2.4.5` is ESM-first. Turbopack follows `"import"` condition → ESM entry → re-exports pdfjs-dist geometry types (Rectangle, etc.), no default export. Fix: `serverExternalPackages: ["pdf-parse"]` routes resolution to Node.js at runtime via CJS entry.
-- **pdf-parse runtime "Internal server error":** v2.x CJS entry exports named class `PDFParse`, not a default function. `import pdf from "pdf-parse"` → `pdf` is `undefined` → `await pdf(buffer)` throws `TypeError`. Fix: `import { PDFParse }` + `new PDFParse({ data: buffer })` + `await parser.getText()`.
-- **Tutorial duplicate prevention:** When `/tutorial` was invoked twice for the same feature (once on architect folder, once on plan folder), established pattern: Tutorial N = feature walkthrough (from plan/), Tutorial N+1 = architect deep-dive (from architect/). Documented in `feedback_tutorial-skill-invocation-choice.md` memory.
+- **Feature 06 `explanation.md` was thin:** 7 brief `## Why X?` sections with 3–5 sentences each. Rewritten to 9 numbered narrative sections with concrete failure modes, code blocks, and multi-paragraph reasoning.
+- **Tutorial 07 had a separate quiz section:** Old version had a standalone "Self-check quiz" at lines 905–966 violating the organic-checkpoint rule. Regenerated from scratch with all 12 questions as inline checkpoints.
 
 ## Current state
 
-- Feature 07 fully working end to end. Build is clean. No lint errors.
-- Tutorials 10, 11, 12 written. Tutorials 04 and 10 refactored to organic-weaving style.
-- `/tutorial` skill updated — all future tutorials will use the organic checkpoint pattern with no quiz section.
-- Progress tracker: Feature 07 ✅. Next → Feature 08.
+- **Phase 2 (Profile Page) is fully complete.** Features 05–08 all working.
+- All tutorial docs through Tutorial 14 are written.
+- Feature 06 and Feature 08 plan docs are high-quality narrative prose.
+- Build is clean. No lint errors. Progress tracker is up to date.
+- `feature-docs` global skill has the revised explanation.md format.
 
 ## Next session starts with
 
-Begin **Feature 08** — check `context/build-plan.md` and `context/progress-tracker.md` for the exact feature name and scope. Run `/architect feature 08` before any implementation.
+Begin **Feature 09 — Find Jobs Page: Full UI**. Run `/architect Feature 09` before any implementation. Check `context/build-plan.md` for the exact feature scope. The placeholder `/find-jobs` page at `app/find-jobs/page.tsx` should be replaced entirely (per the note in `context/progress-tracker.md`).
 
 ## Open questions
 
