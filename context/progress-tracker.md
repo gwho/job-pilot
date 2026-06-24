@@ -6,9 +6,9 @@ Update this file after every completed feature. Any AI agent reading this should
 
 ## Current Status
 
-**Phase:** Phase 2 — Profile Page (complete) → Phase 3 — Find Jobs Page
-**Last completed:** 08 Resume PDF Generation from Profile
-**Next:** 09 Find Jobs Page — Full UI
+**Phase:** Phase 3 — Find Jobs Page
+**Last completed:** 09 Find Jobs Page — Full UI
+**Next:** 10 Adzuna Job Discovery
 
 ---
 
@@ -30,7 +30,7 @@ Update this file after every completed feature. Any AI agent reading this should
 
 ### Phase 3 — Find Jobs Page
 
-- [ ] 09 Find Jobs Page — Full UI
+- [x] 09 Find Jobs Page — Full UI
 - [ ] 10 Adzuna Job Discovery
 - [ ] 11 Filter + Sort + Pagination
 
@@ -60,6 +60,7 @@ Update this file after every completed feature. Any AI agent reading this should
 
 - **06 Profile Save Logic**: Two Server Actions in `actions/profile.ts` — `saveProfile` (upserts all text fields, calculates `is_complete`, fires `profile_completed` PostHog event on first complete save) and `uploadResume` (removes old file from InsForge Storage, uploads new PDF, saves `resume_pdf_key` + `resume_pdf_url`). `lib/profile-utils.ts` with `calculateCompletion()` is the single source of truth for completion logic — used by both the client ring display and the server action, eliminating divergence risk. `MissingField` type added to `types/index.ts`. `profiles` table now has `resume_pdf_key`, `linkedin_connected`, and `is_tailored` columns. Resume upload fires immediately on file pick (separate from Save). Email sourced from auth session, not form input. Full docs in `docs/plan/06-profile-save/`. Architect session in `docs/architect/06-profile-save/`. — **Review fix**: added `resume_pdf_filename` column + persistence; `getResumeSignedUrl` Server Action for private-bucket preview; "View current resume" button in ProfileForm. Docs in `docs/project-review/06-resume-preview/`.
 - **05 Profile Page — Full UI**: Single `"use client"` component (`ProfileForm`) owns all state — completion ring, tag inputs, work experience rows, education, job preferences. No state lift; all derived values (completionPercentage, missingFields) computed via `useMemo`. `FormState` type uses `ExperienceLevel | ''` (and similar unions with `''`) for dropdown fields — required because HTML `<select>` value must be a string, not `null`. Mock data typed as `Profile` at declaration site for structural type safety. `NavLinks.tsx` extracted as a thin client component so `Navbar` stays a Server Component (it calls `getCtaHref()` which needs async server auth). `TagInput` must be declared at module scope, not inside the component function — defining a component inside a render path causes React to treat it as a new type on every render, triggering unnecessary unmount/remount (caught by `react-hooks/static-components` ESLint rule). `lucide-react` added as a dependency. Full docs in `docs/plan/05-profile-page/`. Architect session in `docs/architect/05-profile-page/`.
+- **09 Find Jobs Page — Full UI**: Two new components under `components/find-jobs/`. `SearchControls` is self-contained (no props) — search form placeholder, wired to real API in Feature 10. `JobsTable` accepts `jobs: Job[]` from the Server Component page — all filtering/sorting/pagination run client-side via `useMemo` (moves to DB queries in Feature 11). Match score bar fill uses inline `style={{ backgroundColor: getMatchBarColor(score) }}` with CSS variable strings (`var(--color-success)` etc.) rather than Tailwind classes because fill color must be dynamic. Three color tiers match the design: ≥90 green, ≥80 blue (info-medium), ≥50 orange — this diverges from ui-tokens.md (which groups 70–89 as green) but the design takes precedence. Created `lib/utils.ts` with `MATCH_THRESHOLD = 70` (the canonical location per CLAUDE.md). Mock data defined inside the Server Component function so `found_at` timestamps are computed relative to request time. Full docs in `docs/plan/09-find-jobs-ui/`.
 
 ---
 
