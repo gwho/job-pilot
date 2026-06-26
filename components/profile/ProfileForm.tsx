@@ -179,7 +179,6 @@ export function ProfileForm({ profile, email }: Props) {
   );
 
   // Boolean flags from profile
-  const [linkedinConnected] = useState(profile?.linkedin_connected ?? false);
   const [isTailored] = useState(profile?.is_tailored ?? false);
 
   // Tag input cursor states
@@ -433,7 +432,7 @@ export function ProfileForm({ profile, email }: Props) {
         preferred_locations: preferredLocations,
         work_experience: workExperience,
         education,
-        linkedin_connected: linkedinConnected,
+        linkedin_connected: profile?.linkedin_connected ?? false,
         is_tailored: isTailored,
       });
       setSaveResult(result);
@@ -548,41 +547,7 @@ export function ProfileForm({ profile, email }: Props) {
       </div>
 
       {/* ------------------------------------------------------------------ */}
-      {/* Card 2 — Connected Accounts                                         */}
-      {/* ------------------------------------------------------------------ */}
-      <div className="bg-surface border border-border rounded-2xl p-6 shadow-sm">
-        <h2 className="text-base font-semibold text-text-primary mb-1">
-          Connected Accounts
-        </h2>
-        <p className="text-sm text-text-secondary mb-4">
-          Connect your LinkedIn to let the agent handle manual apply with
-          LinkedIn workflows.
-        </p>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-linkedin flex items-center justify-center flex-shrink-0">
-              <span className="text-linkedin-foreground text-sm font-bold">
-                in
-              </span>
-            </div>
-            <div>
-              <p className="text-sm font-medium text-text-primary">LinkedIn</p>
-              <p className="text-xs text-text-muted">
-                {linkedinConnected ? "Connected" : "Not connected"}
-              </p>
-            </div>
-          </div>
-          <button
-            type="button"
-            className="bg-accent text-accent-foreground text-sm font-medium rounded-md px-4 py-2 hover:bg-accent-dark transition-colors"
-          >
-            {linkedinConnected ? "Disconnect" : "Connect LinkedIn"}
-          </button>
-        </div>
-      </div>
-
-      {/* ------------------------------------------------------------------ */}
-      {/* Card 3 — Resume                                                     */}
+      {/* Card 2 — Resume                                                     */}
       {/* ------------------------------------------------------------------ */}
       <div className="bg-surface border border-border rounded-2xl p-6 shadow-sm">
         <h2 className="text-base font-semibold text-text-primary mb-1">

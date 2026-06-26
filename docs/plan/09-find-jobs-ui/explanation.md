@@ -4,6 +4,18 @@
 
 The page at `app/find-jobs/page.tsx` is an async Server Component. It runs on the server for every request, which means it can call `createInsforgeServer()` and `getCurrentUser()` securely before any HTML is sent to the client. This is the same pattern as `app/profile/page.tsx` — fetch on the server, pass typed data down to the client component as props.
 
+After a project review (see `docs/project-review/09-find-jobs-ui/`), the original monolithic `JobsTable` component was decomposed into a container/leaf architecture. The revised data flow is:
+
+```
+Server Component (page.tsx)
+  └── FindJobsClient  ← receives all jobs, owns state + useMemo pipeline
+        ├── JobFilters        ← presentational: renders filter bar, fires handlers
+        ├── JobsTable         ← presentational: renders table rows for the current page
+        └── JobsPagination    ← presentational: renders pagination controls
+```
+
+`FindJobsClient` is the only `"use client"` component that holds state. `JobFilters`, `JobsTable`, and `JobsPagination` are purely presentational — they accept typed props and return JSX with no internal state. This matters for Feature 11: when filtering moves to DB queries, only `FindJobsClient` changes; the three leaf components stay unchanged.
+
 In Feature 09 there is no real DB query yet — `MOCK_JOBS` is an array of six `Job`-typed objects defined directly inside the server function. The page then passes it as `jobs={MOCK_JOBS}` to `<JobsTable />`. When Feature 11 wires real DB data, the only thing that changes is what `MOCK_JOBS` is replaced with — a real `insforge.database.from("jobs").select(...)` query. The shape of the prop doesn't change because mock data is already typed as `Job[]`, the same type the real query will return. This is why it matters that mock data is typed at declaration rather than inferred from literals: it forces a structural match with the real schema from day one.
 
 `SearchControls` receives no props because it owns no data. It renders the search form and manages its own local state (`jobTitle`, `location`, `searchStatus`). The handshake between "search was triggered" and "the jobs list updated" happens through Next.js's server-rendered page model: in Feature 10, after the API call completes, the client will call `router.refresh()` which re-triggers the Server Component to re-fetch jobs from the DB. That is why `SearchControls` and `JobsTable` are siblings rather than `SearchControls` wrapping `JobsTable` — they share no state; the server re-render is the glue.
@@ -24,13 +36,11 @@ The correct pattern is an inline `style` prop: `style={{ backgroundColor: getMat
 
 The three-tier implementation in `getMatchBarColor` maps: ≥ 90 → `var(--color-success)` (green), ≥ 80 → `var(--color-info-medium)` (blue, `#2b7fff`), ≥ 50 → `var(--color-warning)` (orange), else → `var(--color-text-muted)` (gray). The boundary between green and blue is 80, not 70 — this is a deliberate departure from the token doc to match the design. The decision is documented here because it is the most likely source of confusion for a future developer who reads `ui-tokens.md`, sees "70-89% = green," and wonders why the code uses blue for 88%. The design is ground truth; the token doc is a starting-point reference that can lag behind design decisions.
 
-## 5. Module-level functions and the React re-mounting rule
+## 5. Module-level functions, shared utilities, and the React re-mounting rule
 
-Three things in `JobsTable.tsx` are intentionally defined at module scope rather than inside the component function: `getMatchBarColor`, `formatRelativeDate`, and `MatchScoreBar`.
+`getMatchBarColor` and `formatRelativeDate` are pure functions — they take a primitive value and return a primitive value, with no dependency on React state, hooks, or JSX. After a project review, both were moved from private helpers inside `JobsTable.tsx` to named exports in `lib/utils.ts`. The architectural reason: `lib/` owns shared utilities; component files own UI code. Locking pure transformers in a component file makes them undiscoverable and unreusable by other parts of the project (Feature 14's Dashboard will need both). The boundary rule: if a function could be tested with `expect(fn(input)).toBe(output)` without mounting any React component, it belongs in `lib/`.
 
-For `getMatchBarColor` and `formatRelativeDate`, this is a matter of correctness and clarity: they are pure functions that depend on no component state, so there is no reason to redefine them on every render. Placing them inside the function would technically work but is misleading — it implies a dependency on the closure that doesn't exist.
-
-For `MatchScoreBar`, the reason is more specific. React identifies component types by reference. When a component function is defined inside another component's render function, a new function object is created every time the outer component renders. Because `===` equality fails between the old and new function references, React unmounts and remounts the component on every parent render rather than diffing it. This causes state loss (if the sub-component had state) and flickering (unnecessary DOM removal and re-insertion). The ESLint rule `react-hooks/static-components` catches this pattern explicitly — it was caught in Feature 05 for `TagInput` and the rule applies here the same way. `MatchScoreBar` belongs at module scope permanently.
+`MatchScoreBar` correctly stays in `JobsTable.tsx` — it renders JSX, so `lib/` cannot own it. Its placement at module scope (not inside `JobsTable`'s function body) is mandatory for a different reason. React identifies component types by reference. When a component function is defined inside another component's render function, a new function object is created every time the outer component renders. Because `===` equality fails between the old and new function references, React unmounts and remounts the component on every parent render rather than diffing it. This causes state loss (if the sub-component had state) and flickering (unnecessary DOM removal and re-insertion). The ESLint rule `react-hooks/static-components` catches this pattern explicitly — it was caught in Feature 05 for `TagInput` and the rule applies here the same way. `MatchScoreBar` belongs at module scope permanently.
 
 ## 6. Why mock `found_at` is computed inside the server function
 

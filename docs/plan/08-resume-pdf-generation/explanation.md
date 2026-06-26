@@ -11,7 +11,7 @@ The route handler in `app/api/resume/generate/route.ts` runs server-side:
 3. It checks `profile.is_complete`. If false, it returns 400. This is a server-side guard that backs up the client-side `disabled` attribute on the button.
 4. It calls `generateResumePdf(profile)` from `agent/pdf-generator.tsx`.
 
-Inside the agent, two things happen in sequence. First, a Gemini call via the OpenAI-compatible endpoint produces a `ResumeContent` JSON object — containing a `summary` paragraph and `workExperience` array with polished bullets. Second, `renderToBuffer(<ResumeDocument profile={profile} content={content} />)` renders the @react-pdf template into a binary PDF buffer.
+Inside the agent, two things happen in sequence. First, a Nemotron call via the OpenAI-compatible endpoint produces a `ResumeContent` JSON object — containing a `summary` paragraph and `workExperience` array with polished bullets. Second, `renderToBuffer(<ResumeDocument profile={profile} content={content} />)` renders the @react-pdf template into a binary PDF buffer.
 
 Back in the route, the buffer is converted to a `Blob` and uploaded to InsForge Storage at `{userId}/resume.pdf`. Then the `profiles` table is updated with the new `resume_pdf_key`, `resume_pdf_url`, and `resume_pdf_filename` ("AI Generated Resume.pdf"). The route returns `{ success: true }`.
 
@@ -71,9 +71,9 @@ const { data: uploadData } = await insforge.storage.from("resumes").upload(path,
 
 Remove the existing file first, then upload fresh. The key after upload will always be the expected path. The `@react-pdf` example snippet in `library-docs.md` showed `upsert: true` — this was contradicted by both the Storage section of the same file and the real SDK type signature. The incorrect example should be treated as a copy-paste error that predated the actual storage patterns being established.
 
-## 5. Why Gemini uses temperature 0.7 for generation versus 0.3 for extraction
+## 5. Why Nemotron uses temperature 0.7 for generation versus 0.3 for extraction
 
-The project documents Gemini configuration values in `context/library-docs.md` under "Temperature settings":
+The project documents Nemotron configuration values in `context/library-docs.md` under "Temperature settings":
 
 ```
 0.3 — matching, scoring, extraction, research synthesis — deterministic results
@@ -99,7 +99,7 @@ if (!profile.is_complete) {
 
 The client-side `disabled` attribute is a UX affordance. It can be bypassed by anyone with curl, Postman, the browser's developer tools, or any script that sends a `POST /api/resume/generate` request with a valid session cookie. The `disabled` attribute does not reach the server. Every API route must enforce its own preconditions independently.
 
-Without the server-side check, a direct POST from an incomplete profile would: call Gemini with empty work experience and missing fields, generate a PDF with mostly blank sections, upload it to storage, and update `resume_pdf_filename` to "AI Generated Resume.pdf" — leaving the user with a broken file they can't tell from a real one until they open it.
+Without the server-side check, a direct POST from an incomplete profile would: call Nemotron with empty work experience and missing fields, generate a PDF with mostly blank sections, upload it to storage, and update `resume_pdf_filename` to "AI Generated Resume.pdf" — leaving the user with a broken file they can't tell from a real one until they open it.
 
 ## 7. Why the PDF skills are in agent/ rather than components/ or app/api/
 
@@ -109,7 +109,7 @@ The project architecture has two clear rules:
 
 `@react-pdf/renderer` uses React components (`Document`, `Page`, `View`, `Text`) but these are not DOM components — they're specialised primitives that render to a binary PDF buffer, not to the browser. They are closer in nature to a server-side rendering library than to a UI component. Placing `resume-template.tsx` in `components/` would be incorrect: it's not a browser-rendered component, it's a PDF template used by an agent operation.
 
-The route at `app/api/resume/generate/route.ts` is the entry point — it orchestrates the operation per the agent/API boundary. The actual rendering logic lives in `agent/`. This is consistent with how `app/api/profile/extract/route.ts` calls `agent/extractor.ts` for the AI work, rather than embedding Gemini calls directly in the route.
+The route at `app/api/resume/generate/route.ts` is the entry point — it orchestrates the operation per the agent/API boundary. The actual rendering logic lives in `agent/`. This is consistent with how `app/api/profile/extract/route.ts` calls `agent/extractor.ts` for the AI work, rather than embedding Nemotron calls directly in the route.
 
 ## 8. Why pdf-generator.tsx is .tsx and not .ts
 

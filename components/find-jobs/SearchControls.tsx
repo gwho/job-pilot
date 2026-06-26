@@ -1,26 +1,34 @@
 "use client";
 
-import { useState } from "react";
-import { Search, MapPin, Sparkles } from "lucide-react";
+import { Search, MapPin, Sparkles, Loader2 } from "lucide-react";
 
 type SearchStatus = {
   jobsFound: number;
   strongMatches: number;
 };
 
+type Props = {
+  jobTitle: string;
+  location: string;
+  isLoading: boolean;
+  searchStatus: SearchStatus | null;
+  onJobTitleChange: (value: string) => void;
+  onLocationChange: (value: string) => void;
+  onSearch: () => void;
+};
+
 const inputCls =
-  "w-full bg-surface border border-border rounded-md pl-9 pr-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-1 focus:ring-accent";
+  "w-full bg-surface border border-border rounded-md pl-9 pr-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-1 focus:ring-accent disabled:opacity-60";
 
-export function SearchControls() {
-  const [jobTitle, setJobTitle] = useState("");
-  const [location, setLocation] = useState("");
-  const [searchStatus, setSearchStatus] = useState<SearchStatus | null>(null);
-
-  function handleSearch() {
-    // Placeholder — wired to Adzuna API in Feature 10
-    setSearchStatus({ jobsFound: 8, strongMatches: 4 });
-  }
-
+export function SearchControls({
+  jobTitle,
+  location,
+  isLoading,
+  searchStatus,
+  onJobTitleChange,
+  onLocationChange,
+  onSearch,
+}: Props) {
   return (
     <div className="bg-surface border border-border rounded-2xl p-6 shadow-sm">
       <div className="flex items-end gap-4">
@@ -37,7 +45,8 @@ export function SearchControls() {
               type="text"
               placeholder="Frontend Engineer"
               value={jobTitle}
-              onChange={(e) => setJobTitle(e.target.value)}
+              onChange={(e) => onJobTitleChange(e.target.value)}
+              disabled={isLoading}
               className={inputCls}
             />
           </div>
@@ -56,18 +65,24 @@ export function SearchControls() {
               type="text"
               placeholder="Remote, New York..."
               value={location}
-              onChange={(e) => setLocation(e.target.value)}
+              onChange={(e) => onLocationChange(e.target.value)}
+              disabled={isLoading}
               className={inputCls}
             />
           </div>
         </div>
 
         <button
-          onClick={handleSearch}
-          className="flex items-center gap-2 bg-accent text-accent-foreground text-sm font-medium rounded-md px-4 py-2 hover:bg-accent-dark transition-colors whitespace-nowrap"
+          onClick={onSearch}
+          disabled={isLoading}
+          className="flex items-center gap-2 bg-accent text-accent-foreground text-sm font-medium rounded-md px-4 py-2 hover:bg-accent-dark transition-colors whitespace-nowrap disabled:opacity-60 disabled:cursor-not-allowed"
         >
-          <Search size={14} />
-          Find Jobs
+          {isLoading ? (
+            <Loader2 size={14} className="animate-spin" />
+          ) : (
+            <Search size={14} />
+          )}
+          {isLoading ? "Finding jobs..." : "Find Jobs"}
         </button>
       </div>
 

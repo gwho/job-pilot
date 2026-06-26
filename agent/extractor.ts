@@ -68,14 +68,18 @@ export async function extractProfileFromResume(
     };
   }
 
-  // Step 2 — structured extraction via Gemini
+  // Step 2 — structured extraction via Nemotron
   const openai = new OpenAI({
-    apiKey: process.env.GOOGLE_API_KEY!,
-    baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
+    apiKey: process.env.OPENROUTER_API_KEY!,
+    baseURL: "https://openrouter.ai/api/v1",
+    defaultHeaders: {
+      "HTTP-Referer": "https://job-pilot.app",
+      "X-Title": "JobPilot",
+    },
   });
 
   const response = await openai.chat.completions.create({
-    model: "gemini-2.5-flash-lite",
+    model: "nvidia/nemotron-3-ultra-550b-a55b:free",
     response_format: { type: "json_object" },
     temperature: 0.3,
     max_tokens: 800,

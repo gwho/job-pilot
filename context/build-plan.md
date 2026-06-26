@@ -117,7 +117,7 @@ Wire profile form to InsForge DB.
 
 ### 07 AI Profile Extraction from Resume
 
-Extract from Resume button — Gemini reads uploaded PDF and auto-fills profile form fields.
+Extract from Resume button — Nemotron reads uploaded PDF and auto-fills profile form fields.
 
 **UI:**
 
@@ -130,7 +130,7 @@ Extract from Resume button — Gemini reads uploaded PDF and auto-fills profile 
 
 - pdf-parse extracts raw text from uploaded PDF buffer
 - If extracted text is empty or too short — return error: "Could not extract text from this PDF. Please try a different file."
-- Gemini reads extracted text and returns structured JSON matching all profile field names
+- Nemotron reads extracted text and returns structured JSON matching all profile field names
 - Form fields populated with extracted data
 - User saves manually after reviewing
 
@@ -138,17 +138,17 @@ Extract from Resume button — Gemini reads uploaded PDF and auto-fills profile 
 
 ### 08 Resume PDF Generation from Profile
 
-Generate a clean professional PDF resume from current profile data using Gemini.
+Generate a clean professional PDF resume from current profile data using Nemotron.
 
 **Logic:**
 
 - POST /api/resume/generate
 - Reads current profile data from profiles table
-- Gemini generates professional resume content:
+- Nemotron generates professional resume content:
   - Professional summary paragraph
   - Polished work experience bullet points
   - Clean professional language throughout
-- @react-pdf/renderer renders Gemini output into clean single-page PDF using renderToBuffer()
+- @react-pdf/renderer renders Nemotron output into clean single-page PDF using renderToBuffer()
 - Buffer uploaded to InsForge Storage at resumes/{user_id}/resume.pdf with upsert: true
 - resume_pdf_url updated in profiles table
 
@@ -187,7 +187,7 @@ Agent calls Adzuna API to find jobs matching user's search criteria, scores them
   - Detect country from location input — default to 'us'
 - For each job returned:
   - Extract title, company, location, salary, description snippet, redirect_url
-  - Gemini scores job against user profile:
+  - Nemotron scores job against user profile:
     - matchScore — integer 0-100
     - matchReason — one paragraph explanation
     - matchedSkills — skills user has that job requires
@@ -231,7 +231,7 @@ Build the complete job details page UI. Job data from DB is already available fr
 - Back to Jobs link
 - Job header — company logo placeholder, job title, company name, match score badge with percentage, View Job Post button (links to redirect_url)
 - Info cards row — Salary Est., Location, Job Type, Date Found
-- AI Match Reasoning section — match reason paragraph from Gemini
+- AI Match Reasoning section — match reason paragraph from Nemotron
 - Required Skills vs Your Profile — matched skills as green badges, missing skills as red/orange badges
 - Job Description section — description content from Adzuna
 - Company Research card — empty state with Research Company button. After research: structured dossier with company overview, tech stack, culture, why this role, interview prep
@@ -254,7 +254,7 @@ Agent researches the company using their public website and builds a structured 
   - Strip subdomain from response.url hostname (e.g. jobs.stripe.com → stripe.com)
   - Construct homepage URL as https://{rootDomain}
   - If response.url still contains "adzuna.com" or fetch throws — fall back to https://www.{company}.com (company name from DB)
-  - If Stagehand gets no meaningful content (oneLiner and productSummary empty) — skip browser research entirely, proceed to Gemini synthesis with job description and profile only
+  - If Stagehand gets no meaningful content (oneLiner and productSummary empty) — skip browser research entirely, proceed to Nemotron synthesis with job description and profile only
 - Open single Browserbase session with Stagehand
   **Stagehand homepage extraction:**
 
@@ -314,7 +314,7 @@ const page = await stagehand.extract({
 ```
 
 - Close Browserbase session after homepage + max 3 sub-pages
-  **Gemini synthesis (runs after browser closes):**
+  **Nemotron synthesis (runs after browser closes):**
 
 System prompt:
 
@@ -366,7 +366,7 @@ Temperature: 0.4
 ```
 
 - Save complete dossier to jobs.company_research jsonb column
-- Always return a dossier — never fail silently. If browser research failed, Gemini synthesizes from job description and profile alone.
+- Always return a dossier — never fail silently. If browser research failed, Nemotron synthesizes from job description and profile alone.
   **PostHog event:** `company_researched` — { userId, jobId, company }
 
 ---

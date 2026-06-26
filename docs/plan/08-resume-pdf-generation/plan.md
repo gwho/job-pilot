@@ -5,7 +5,7 @@
 | File | Status | What changed |
 |---|---|---|
 | `agent/resume-template.tsx` | Created | @react-pdf `Document`/`Page`/`View`/`Text` component (`ResumeDocument`) rendering header, summary, skills, work experience, and education. Exports `ResumeContent` interface. |
-| `agent/pdf-generator.tsx` | Created | `generateResumePdf(profile)` — calls Gemini (temp 0.7, max_tokens 1000) for polished summary + work experience bullets, calls `renderToBuffer(<ResumeDocument .../>)`, returns `{ success, buffer }` |
+| `agent/pdf-generator.tsx` | Created | `generateResumePdf(profile)` — calls Nemotron (temp 0.7, max_tokens 1000) for polished summary + work experience bullets, calls `renderToBuffer(<ResumeDocument .../>)`, returns `{ success, buffer }` |
 | `app/api/resume/generate/route.ts` | Created | POST handler: auth → full profile fetch → `is_complete` guard → `generateResumePdf()` → remove existing file → upload Blob → upsert `resume_pdf_key`, `resume_pdf_url`, `resume_pdf_filename` |
 | `next.config.ts` | Modified | Added `"@react-pdf/renderer"` to `serverExternalPackages` |
 | `components/profile/ProfileForm.tsx` | Modified | Added `isGenerating`/`startGenerate` transition, `generateResult` state, `handleGenerate()` handler, wired Generate button with `disabled`, `title` tooltip, loading text, and inline success/error feedback |
@@ -29,9 +29,9 @@ None. `resume_pdf_key`, `resume_pdf_url`, and `resume_pdf_filename` columns alre
 
 4. **is_complete enforced server-side** — The route checks `profile.is_complete` and returns 400 if false. The client-side `disabled` attribute is UX only; the server guard is the real protection.
 
-5. **Gemini config from library-docs.md** — Resume generation uses `temperature: 0.7` and `max_tokens: 1000` per `context/library-docs.md`. Never change these values without updating `library-docs.md`.
+5. **Nemotron config from library-docs.md** — Resume generation uses `temperature: 0.7` and `max_tokens: 1000` per `context/library-docs.md`. Never change these values without updating `library-docs.md`.
 
-6. **ResumeContent is the single contract** — The `ResumeContent` interface in `agent/pdf-generator.tsx` is the only source of truth between the Gemini call and the PDF template. If the Gemini prompt output shape changes, update this interface — the TypeScript compiler will flag all downstream breakage.
+6. **ResumeContent is the single contract** — The `ResumeContent` interface in `agent/pdf-generator.tsx` is the only source of truth between the Nemotron call and the PDF template. If the Nemotron prompt output shape changes, update this interface — the TypeScript compiler will flag all downstream breakage.
 
 7. **@react-pdf/renderer stays in serverExternalPackages** — Removing it causes Turbopack to attempt bundling pdfkit internals, which fails at build time. It must stay alongside `"pdf-parse"` in `next.config.ts`.
 

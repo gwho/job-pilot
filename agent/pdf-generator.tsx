@@ -1,4 +1,3 @@
-import React from "react";
 import OpenAI from "openai";
 import { renderToBuffer } from "@react-pdf/renderer";
 
@@ -32,8 +31,12 @@ export async function generateResumePdf(
 ): Promise<{ success: true; buffer: Buffer } | { success: false; error: string }> {
   try {
     const openai = new OpenAI({
-      apiKey: process.env.GOOGLE_API_KEY!,
-      baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
+      apiKey: process.env.OPENROUTER_API_KEY!,
+      baseURL: "https://openrouter.ai/api/v1",
+      defaultHeaders: {
+        "HTTP-Referer": "https://job-pilot.app",
+        "X-Title": "JobPilot",
+      },
     });
 
     const workExpText = (profile.work_experience ?? [])
@@ -59,7 +62,7 @@ ${workExpText || "Not provided"}
 EDUCATION: ${educationText}`;
 
     const response = await openai.chat.completions.create({
-      model: "gemini-2.5-flash-lite",
+      model: "nvidia/nemotron-3-ultra-550b-a55b:free",
       response_format: { type: "json_object" },
       temperature: 0.7,
       max_tokens: 1000,
