@@ -270,7 +270,7 @@ All environment variables defined in `.env.local` for development. Never hardcod
 | `NEXT_PUBLIC_APP_URL`           | app/actions/auth.ts (OAuth redirectTo) |
 | `BROWSERBASE_API_KEY`           | lib/browserbase.ts     |
 | `BROWSERBASE_PROJECT_ID`        | lib/browserbase.ts     |
-| `GOOGLE_API_KEY`                | agent/ functions       |
+| `OPENROUTER_API_KEY`            | agent/ functions       |
 | `ADZUNA_APP_ID`                 | lib/adzuna.ts          |
 | `ADZUNA_APP_KEY`                | lib/adzuna.ts          |
 | `NEXT_PUBLIC_POSTHOG_KEY`       | instrumentation-client.ts, lib/posthog-server.ts |
@@ -331,7 +331,7 @@ Approved dependencies for this project:
 - `@insforge/sdk` — InsForge client (SSR helpers via the `@insforge/sdk/ssr` and `@insforge/sdk/ssr/middleware` subpaths)
 - `@browserbasehq/sdk` — Browserbase sessions
 - `@browserbasehq/stagehand` — AI browser control
-- `openai` — Gemini API via OpenAI-compatible endpoint (`baseURL: https://generativelanguage.googleapis.com/v1beta/openai/`)
+- `openai` — Nemotron via OpenRouter's OpenAI-compatible endpoint (`baseURL: https://openrouter.ai/api/v1`)
 - `posthog-js` — PostHog browser client
 - `posthog-node` — PostHog server client
 - `@react-pdf/renderer` — Resume PDF generation

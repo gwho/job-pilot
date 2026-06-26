@@ -376,20 +376,51 @@ Small inline auth failure message rendered inside the existing login card when `
 ### SearchControls
 
 File: `components/find-jobs/SearchControls.tsx`
-Last updated: 2026-06-25
+Last updated: 2026-06-25 (Feature 10)
 
 | Property          | Class / Value                                                                                           |
 | ----------------- | ------------------------------------------------------------------------------------------------------- |
 | Card              | `bg-surface border border-border rounded-2xl p-6 shadow-sm`                                            |
 | Input row         | `flex items-end gap-4`                                                                                  |
 | Label             | `block text-xs font-medium text-text-secondary uppercase tracking-wide mb-1`                            |
-| Input (with icon) | `w-full bg-surface border border-border rounded-md pl-9 pr-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-1 focus:ring-accent` |
+| Input (with icon) | `w-full bg-surface border border-border rounded-md pl-9 pr-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-1 focus:ring-accent disabled:opacity-60` |
 | Inset icon        | `absolute left-3 top-1/2 -translate-y-1/2 text-text-muted pointer-events-none`                         |
-| Primary button    | `flex items-center gap-2 bg-accent text-accent-foreground text-sm font-medium rounded-md px-4 py-2 hover:bg-accent-dark transition-colors whitespace-nowrap` |
+| Primary button    | `flex items-center gap-2 bg-accent text-accent-foreground text-sm font-medium rounded-md px-4 py-2 hover:bg-accent-dark transition-colors whitespace-nowrap disabled:opacity-60 disabled:cursor-not-allowed` |
 | Success banner    | `mt-4 flex items-center gap-2 bg-success-lightest text-success-foreground text-sm rounded-md px-4 py-2` |
 
 **Pattern notes:**
-Self-contained `"use client"` component; no props. The Find Jobs button sets local `searchStatus` state as a placeholder — wired to real Adzuna API in Feature 10. Success banner is conditionally rendered only when `searchStatus !== null`. Input icon uses `pointer-events-none` so clicks pass through to the input. `whitespace-nowrap` on the button prevents line breaks in the flex row when the viewport is narrow.
+Presentational `"use client"` leaf (Feature 10 refactor) — **no internal state**. Receives `jobTitle`, `location`, `isLoading`, `searchStatus`, `onJobTitleChange`, `onLocationChange`, `onSearch` as props from `FindJobsClient`. While `isLoading`, the button shows a spinning `Loader2` + "Finding jobs..." and inputs/button are disabled. Success banner renders only when `searchStatus !== null`. Input icon uses `pointer-events-none` so clicks pass through to the input. `whitespace-nowrap` on the button prevents line breaks in the flex row when the viewport is narrow.
+
+---
+
+### FindJobsClient
+
+File: `components/find-jobs/FindJobsClient.tsx`
+Last updated: 2026-06-25 (Feature 10)
+
+| Property | Class / Value |
+| -------- | ------------- |
+| Outer wrapper | `space-y-6` |
+| List card | `bg-surface border border-border rounded-2xl shadow-sm` |
+
+**Pattern notes:**
+Container component and the **single owner of `jobs` state** (Feature 10). Owns search state (`jobTitle`, `location`, `isLoading`, `searchStatus`, `jobs`) and view state (`filterText`, `matchFilter`, `sort`, `page`) plus the `useMemo` filter/sort/paginate pipeline (now keyed on the `jobs` state, not a prop). Accepts `initialJobs: Job[]` from the Server Component page and seeds `jobs` from it. `handleSearch()` POSTs `{ jobTitle, location }` to `/api/agent/find` and calls `setJobs(res.jobs)` — the table updates with no page reload. Renders `<SearchControls />` as a child above the list card, then wraps `<JobFilters />`, `<JobsTable />`, `<JobsPagination />`. Every filter/sort change calls `setPage(1)`. `safePage = Math.min(page, totalPages)` guards against filter-induced page drift. In Feature 11, filtering moves to DB queries — only this component changes; leaves stay frozen.
+
+---
+
+### JobFilters
+
+File: `components/find-jobs/JobFilters.tsx`
+Last updated: 2026-06-25
+
+| Property        | Class / Value |
+| --------------- | ------------- |
+| Filter bar      | `flex items-center gap-3 p-4 border-b border-border` |
+| Filter input    | `w-full bg-surface border border-border rounded-md pl-9 pr-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-1 focus:ring-accent` |
+| Select dropdown | `appearance-none bg-surface border border-border rounded-md pl-3 pr-8 py-2 text-sm text-text-primary focus:outline-none focus:ring-1 focus:ring-accent cursor-pointer` |
+
+**Pattern notes:**
+Purely presentational — no state. Receives `filterText`, `matchFilter`, `sort`, `onFilterTextChange`, `onMatchFilterChange`, `onSortChange` as props from `FindJobsClient`. Exports `MatchFilter` and `Sort` types (re-used by `FindJobsClient`). Icons use `pointer-events-none` to pass clicks through to inputs.
 
 ---
 
@@ -398,24 +429,33 @@ Self-contained `"use client"` component; no props. The Find Jobs button sets loc
 File: `components/find-jobs/JobsTable.tsx`
 Last updated: 2026-06-25
 
-| Property           | Class / Value                                                                                         |
-| ------------------ | ----------------------------------------------------------------------------------------------------- |
-| Card               | `bg-surface border border-border rounded-2xl shadow-sm`                                               |
-| Filter bar         | `flex items-center gap-3 p-4 border-b border-border`                                                  |
-| Filter input       | `w-full bg-surface border border-border rounded-md pl-9 pr-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-1 focus:ring-accent` |
-| Select dropdown    | `appearance-none bg-surface border border-border rounded-md pl-3 pr-8 py-2 text-sm text-text-primary focus:outline-none focus:ring-1 focus:ring-accent cursor-pointer` |
-| Table header       | `text-xs font-medium text-text-secondary uppercase tracking-wide` (per `<th>`, `px-6 py-3`)           |
-| Table row          | `border-t border-border hover:bg-surface-secondary transition-colors cursor-pointer`                   |
-| Company logo       | `w-8 h-8 bg-surface-tertiary border border-border rounded-md flex items-center justify-center shrink-0` |
-| Match bar track    | `w-24 h-1 bg-border-light rounded-full overflow-hidden`                                               |
-| Match bar fill     | inline `style={{ width: \`${score}%\`, backgroundColor: getMatchBarColor(score) }}`                   |
-| Pagination row     | `flex items-center justify-between px-6 py-3 border-t border-border`                                  |
-| Active page button | `w-8 h-8 text-sm rounded-md bg-accent text-accent-foreground`                                         |
-| Inactive page btn  | `w-8 h-8 text-sm rounded-md text-text-primary hover:bg-surface-secondary`                             |
-| Disabled nav btn   | `text-text-muted cursor-not-allowed`                                                                   |
+| Property        | Class / Value |
+| --------------- | ------------- |
+| Table header    | `text-xs font-medium text-text-secondary uppercase tracking-wide` (per `<th>`, `px-6 py-3`) |
+| Table row       | `border-t border-border hover:bg-surface-secondary transition-colors cursor-pointer` |
+| Company logo    | `w-8 h-8 bg-surface-tertiary border border-border rounded-md flex items-center justify-center shrink-0` |
+| Match bar track | `w-24 h-1 bg-border-light rounded-full overflow-hidden` |
+| Match bar fill  | inline `style={{ width: \`${score}%\`, backgroundColor: getMatchBarColor(score) }}` |
 
 **Pattern notes:**
-Accepts `jobs: Job[]` as a prop — data comes from the Server Component page. All filtering, sorting, and pagination run client-side (in Feature 11 these move to DB queries). `getMatchBarColor(score)` returns a CSS variable string (`var(--color-success)` etc.) used in an inline `style` — never a Tailwind class — because bar fill color must be dynamic. Match score color tiers: ≥90 → `success`, ≥80 → `info-medium` (blue), ≥50 → `warning` (orange), else → `text-muted`. `MatchScoreBar` is a module-level sub-component (not inside the render function). `formatRelativeDate()` is a module-level helper. `useMemo` wraps the filtered/sorted list to avoid recomputing on every render. Every filter/sort change resets `page` to 1.
+Purely presentational — receives `jobs: Job[]` (the already-filtered page slice from `FindJobsClient`) and renders table rows only. No state, no filtering logic. `MatchScoreBar` is a module-level sub-component (not inside the render function — see module-level component rule in Feature 05). `getMatchBarColor` and `formatRelativeDate` are imported from `lib/utils.ts`. Match score color tiers: ≥90 → `success`, ≥80 → `info-medium` (blue), ≥50 → `warning` (orange), else → `text-muted`. Bar fill uses inline `style` (not Tailwind) because color is dynamic.
+
+---
+
+### JobsPagination
+
+File: `components/find-jobs/JobsPagination.tsx`
+Last updated: 2026-06-25
+
+| Property           | Class / Value |
+| ------------------ | ------------- |
+| Pagination row     | `flex items-center justify-between px-6 py-3 border-t border-border` |
+| Active page button | `w-8 h-8 text-sm rounded-md bg-accent text-accent-foreground` |
+| Inactive page btn  | `w-8 h-8 text-sm rounded-md text-text-primary hover:bg-surface-secondary` |
+| Disabled nav btn   | `text-text-muted cursor-not-allowed` |
+
+**Pattern notes:**
+Purely presentational — receives `page`, `totalPages`, `totalCount`, `startIdx`, `pageNumbers`, `onPageChange` from `FindJobsClient`. Renders "Showing X to Y of Z" count, ellipsis-compressed page number buttons, and Previous/Next. `PAGE_SIZE = 6` is a local constant used for the "to" end calculation in the count display.
 
 ---
 

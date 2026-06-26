@@ -24,7 +24,7 @@ No test runner is configured. Verify features manually after implementation by r
 | -------------- | ------------------------------------------- |
 | Framework      | Next.js 16 App Router, React 19             |
 | Backend        | InsForge — auth, database, storage, realtime (Supabase-compatible API) |
-| AI             | Google Gemini 2.5 Flash-Lite (matching, extraction, synthesis, resume generation) |
+| AI             | NVIDIA Nemotron 3 Ultra via OpenRouter (matching, extraction, synthesis, resume generation) |
 | Browser agent  | Browserbase (cloud browser sessions) + Stagehand (AI page control) |
 | Job data       | Adzuna API (IT job listings) |
 | Analytics      | PostHog (event tracking + dashboard charts) |
@@ -53,9 +53,9 @@ InsForge behaves like Supabase (`createBrowserClient` / `createServerClient` fro
 
 **UI mutations** → Server Action in `actions/` → InsForge DB write → `revalidatePath()`
 
-**Agent operations** → API route in `app/api/agent/` → function in `agent/` → Adzuna/Gemini → InsForge DB write → page revalidated
+**Agent operations** → API route in `app/api/agent/` → function in `agent/` → Adzuna/Nemotron → InsForge DB write → page revalidated
 
-**Company research** → `app/api/agent/research` → `agent/research.ts` → single Browserbase/Stagehand session (homepage + max 3 sub-pages) → Gemini synthesis → dossier saved to `jobs.company_research` JSONB
+**Company research** → `app/api/agent/research` → `agent/research.ts` → single Browserbase/Stagehand session (homepage + max 3 sub-pages) → Nemotron synthesis → dossier saved to `jobs.company_research` JSONB
 
 ### Key invariants
 
@@ -65,7 +65,7 @@ InsForge behaves like Supabase (`createBrowserClient` / `createServerClient` fro
 - Every query must be scoped to `user_id` — never fetch without a user filter
 - Every Stagehand action is wrapped in try/catch; failures logged to `agent_logs`, never thrown
 - Browserbase sessions always closed with `stagehand.close()` — even on failure
-- Company research always returns a dossier — Gemini synthesises from job description + profile if browser research fails
+- Company research always returns a dossier — Nemotron synthesises from job description + profile if browser research fails
 - Adzuna always includes `category=it-jobs`
 - `MATCH_THRESHOLD = 70` lives in `lib/utils.ts` — import it, never hardcode
 
@@ -84,4 +84,4 @@ Tailwind v4 — tokens defined with `@theme` in `app/globals.css`. No `tailwind.
 
 ### Environment variables
 
-All in `.env.local`. Required: `NEXT_PUBLIC_INSFORGE_URL`, `NEXT_PUBLIC_INSFORGE_ANON_KEY`, `BROWSERBASE_API_KEY`, `BROWSERBASE_PROJECT_ID`, `GOOGLE_API_KEY`, `ADZUNA_APP_ID`, `ADZUNA_APP_KEY`, `NEXT_PUBLIC_POSTHOG_KEY`, `NEXT_PUBLIC_POSTHOG_HOST`.
+All in `.env.local`. Required: `NEXT_PUBLIC_INSFORGE_URL`, `NEXT_PUBLIC_INSFORGE_ANON_KEY`, `BROWSERBASE_API_KEY`, `BROWSERBASE_PROJECT_ID`, `OPENROUTER_API_KEY`, `ADZUNA_APP_ID`, `ADZUNA_APP_KEY`, `NEXT_PUBLIC_POSTHOG_KEY`, `NEXT_PUBLIC_POSTHOG_HOST`.

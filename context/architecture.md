@@ -9,7 +9,7 @@
 | Cloud browser                  | Browserbase              | Company research — browsing company public pages |
 | AI browser control             | Stagehand                | Company page interaction and content extraction  |
 | Job Discovery                  | Adzuna API               | Job search and discovery                         |
-| AI model                       | Google Gemini 2.5 Flash-Lite | Matching, research synthesis, extraction     |
+| AI model                       | NVIDIA Nemotron 3 Ultra (via OpenRouter) | Matching, research synthesis, extraction |
 | Analytics                      | PostHog                  | Event tracking and dashboard charts              |
 | PDF generation                 | @react-pdf/renderer      | Resume PDF rendering                             |
 | Styling                        | Tailwind CSS + shadcn/ui | UI components and styling                        |
@@ -61,10 +61,10 @@
 │           ├── generate/route.ts          → Generate base resume PDF from profile
 │           └── extract/route.ts           → Extract profile data from uploaded resume PDF
 ├── agent/
-│   ├── adzuna.ts                          → Adzuna API job discovery + Gemini scoring
-│   ├── research.ts                        → Company research — Browserbase + Stagehand + Gemini
-│   ├── matcher.ts                         → Gemini job matching logic
-│   ├── extractor.ts                       → Gemini job description extraction + structuring
+│   ├── adzuna.ts                          → Adzuna API job discovery + Nemotron scoring
+│   ├── research.ts                        → Company research — Browserbase + Stagehand + Nemotron
+│   ├── matcher.ts                         → Nemotron job matching logic
+│   ├── extractor.ts                       → Nemotron job description extraction + structuring
 │   └── types.ts                           → Agent-specific TypeScript types
 ├── actions/
 │   ├── profile.ts                         → Profile save + update
@@ -151,7 +151,7 @@ Calls agent/adzuna.ts
         ↓
 Adzuna API returns job listings
         ↓
-Gemini scores each job against user profile
+Nemotron scores each job against user profile
         ↓
 Agent writes results to InsForge DB
         ↓
@@ -171,7 +171,7 @@ Single Browserbase session opens with Stagehand
         ↓
 Navigates to company homepage + sub pages
         ↓
-Gemini synthesizes dossier from extracted content
+Nemotron synthesizes dossier from extracted content
         ↓
 Dossier saved to jobs.company_research
         ↓
@@ -185,7 +185,7 @@ User uploads resume or clicks Generate
         ↓
 API route in app/api/resume/
         ↓
-Gemini processes content
+Nemotron processes content
         ↓
 @react-pdf/renderer renders PDF buffer
         ↓
@@ -262,7 +262,7 @@ URL saved to profiles table
 | benefits           | text[]      | Optional                                       |
 | about_company      | text        | Brief company description                      |
 | match_score        | integer     | 0-100 scored against main profile              |
-| match_reason       | text        | Gemini explanation                             |
+| match_reason       | text        | AI model explanation                           |
 | matched_skills     | text[]      | Skills user has that match                     |
 | missing_skills     | text[]      | Skills user lacks                              |
 | company_research   | jsonb       | Company dossier from research agent            |
@@ -383,8 +383,8 @@ const stagehand = new Stagehand({
   apiKey: process.env.BROWSERBASE_API_KEY!,
   projectId: process.env.BROWSERBASE_PROJECT_ID!,
   browserbaseSessionID: session.id,
-  modelName: "gemini-2.5-flash-lite",
-  modelClientOptions: { apiKey: process.env.GOOGLE_API_KEY! },
+  modelName: "nvidia/nemotron-3-ultra-550b-a55b:free",
+  modelClientOptions: { apiKey: process.env.OPENROUTER_API_KEY!, baseURL: "https://openrouter.ai/api/v1" },
 });
 
 await stagehand.init();
@@ -405,7 +405,7 @@ try {
   await page.waitForLoadState("networkidle");
   const content = await stagehand.extract({ instruction: "..." });
 } catch (error) {
-  // Log and continue — Gemini will synthesize from what was found
+  // Log and continue — Nemotron will synthesize from what was found
   await logAgentError(jobId, error);
 }
 
@@ -425,7 +425,7 @@ Rules the AI agent must never violate:
 - All InsForge server-side writes use `createInsforgeServer()` — never the browser client.
 - No hardcoded hex values or raw Tailwind color classes in components — use CSS variables from ui-tokens.md.
 - Every Stagehand action is wrapped in try/catch. Failures are logged to agent_logs, never thrown to crash the run.
-- Company research always returns a dossier — even if browser research fails, Gemini synthesizes from company name and job description alone. Never return empty.
+- Company research always returns a dossier — even if browser research fails, Nemotron synthesizes from company name and job description alone. Never return empty.
 - Browserbase sessions are always closed with stagehand.close() when done — never leave sessions open.
 - Always scope InsForge queries to the current user_id — never query without a user filter.
 - Adzuna API always includes category=it-jobs — never search without this filter.

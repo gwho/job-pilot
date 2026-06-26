@@ -1,6 +1,6 @@
 # Tutorial 15 — Find Jobs Page Full UI: Sibling Architecture, Dynamic Styles, and Pagination Math
 
-**After completing this tutorial you will understand:** why sibling client components coordinate through a server re-render instead of shared state, why Tailwind's build-time scanning makes computed class names impossible and how CSS custom properties solve it, how React identifies component types by reference and why sub-components must live at module scope, the `safePage` clamping pattern that prevents filter-induced page drift, and why `pointer-events-none` is not optional on absolutely-positioned inset icons.
+**After completing this tutorial you will understand:** why sibling client components coordinate through a server re-render instead of shared state, the container/leaf pattern and why pure utilities belong in `lib/` rather than component files, why Tailwind's build-time scanning makes computed class names impossible and how CSS custom properties solve it, how React identifies component types by reference and why sub-components must live at module scope, the `safePage` clamping pattern that prevents filter-induced page drift, and why `pointer-events-none` is not optional on absolutely-positioned inset icons.
 
 ---
 
@@ -10,8 +10,11 @@
 > - Tutorial 06 (`../06-profile-page/README.md`) — the Server Component + Client Component split and the module-level component rule (`TagInput`) introduced there reappear here with `MatchScoreBar`. This tutorial extends those patterns to a new page.
 >
 > Open [`app/find-jobs/page.tsx`](../../../app/find-jobs/page.tsx),
-> [`components/find-jobs/SearchControls.tsx`](../../../components/find-jobs/SearchControls.tsx),
-> [`components/find-jobs/JobsTable.tsx`](../../../components/find-jobs/JobsTable.tsx), and
+> [`components/find-jobs/FindJobsClient.tsx`](../../../components/find-jobs/FindJobsClient.tsx),
+> [`components/find-jobs/JobFilters.tsx`](../../../components/find-jobs/JobFilters.tsx),
+> [`components/find-jobs/JobsTable.tsx`](../../../components/find-jobs/JobsTable.tsx),
+> [`components/find-jobs/JobsPagination.tsx`](../../../components/find-jobs/JobsPagination.tsx),
+> [`components/find-jobs/SearchControls.tsx`](../../../components/find-jobs/SearchControls.tsx), and
 > [`lib/utils.ts`](../../../lib/utils.ts) alongside this tutorial.
 
 ---
@@ -20,7 +23,8 @@
 
 | Concept | Where it appears | Category |
 |---------|-----------------|----------|
-| Single source of truth | `MATCH_THRESHOLD` exported from `lib/utils.ts` only | System design |
+| Single source of truth | `MATCH_THRESHOLD`, `getMatchBarColor`, `formatRelativeDate` in `lib/utils.ts` only | System design |
+| Container/leaf decomposition | `FindJobsClient` (state) + `JobFilters`/`JobsTable`/`JobsPagination` (presentational) | Design patterns |
 | Static vs. runtime analysis | Tailwind scanner vs. `getMatchBarColor` inline style | System design |
 | CSS custom properties (`var()`) | `"var(--color-success)"` strings in `getMatchBarColor` | Web fundamentals |
 | Object reference identity | `MatchScoreBar` at module scope to preserve `===` type equality | Design patterns |
@@ -73,7 +77,17 @@ Run these prompts before reading any code. Budget 25–35 minutes.
 
 ---
 
-### Concept 5 — DOM event hit testing and `pointer-events`
+### Concept 5 — Container/presentational component decomposition
+
+> "Explain the container/presentational component pattern in React. What does a container component know and own? What does a presentational component know and own? Why are presentational components easier to test, reuse, and refactor? Give me a concrete example — a paginated list — and sketch the component tree you'd use. Quiz me."
+
+*What to listen for:* A container component owns state, side effects, and derived data. It may render little or no JSX directly — its job is to compute values and pass them down. A presentational component owns nothing except its own JSX — it receives typed props and returns markup. The separation means: when data logic changes (e.g., filtering moves from client to server), only the container changes. When visual design changes, only the presentational component changes. Neither needs to know the other's internals.
+
+*Practice question:* In the Find Jobs page, `FindJobsClient` is the container. What would need to change in Feature 11 if `JobFilters`, `JobsTable`, and `JobsPagination` were purely presentational? What if they each managed their own slice of state instead?
+
+---
+
+### Concept 6 — DOM event hit testing and `pointer-events`
 
 > "Explain the browser's event hit testing model. When a user clicks at a pixel, how does the browser decide which element to fire the event on? What is the CSS `pointer-events: none` property and what does it do to that process? Give me a concrete example of when you'd need it. Quiz me."
 
@@ -104,17 +118,22 @@ REQUEST: GET /find-jobs
 │  getCurrentUser() → auth guard            │
 │  Date.now() → compute MOCK_JOBS found_at  │
 │  return <Navbar /> + <SearchControls />   │
-│              + <JobsTable jobs={...} />   │
+│           + <FindJobsClient jobs={...} /> │
 └──────────┬──────────────┬─────────────────┘
            │              │
            ▼              ▼
-┌──────────────┐  ┌──────────────────────────┐
-│SearchControls│  │ JobsTable   [CLIENT]      │
-│ [CLIENT]     │  │  useMemo(filtered)        │
-│  jobTitle    │  │  safePage clamp           │
-│  location    │  │  MatchScoreBar (module)   │
-│  searchStatus│  │  filter/sort/pagination   │
-└──────────────┘  └──────────────────────────┘
+┌──────────────┐  ┌──────────────────────────────────────────┐
+│SearchControls│  │ FindJobsClient   [CLIENT — container]     │
+│ [CLIENT]     │  │  filterText, matchFilter, sort, page      │
+│  jobTitle    │  │  useMemo(filtered) → safePage → pageItems │
+│  location    │  │                                           │
+│  searchStatus│  │  ├── JobFilters   [presentational]        │
+└──────────────┘  │  │    props: values + handlers            │
+                  │  ├── JobsTable    [presentational]        │
+                  │  │    props: pageItems Job[]              │
+                  │  └── JobsPagination [presentational]      │
+                  │       props: page/totalPages/handlers     │
+                  └──────────────────────────────────────────┘
 ```
 
 **Key invariants for this feature:**
@@ -226,18 +245,20 @@ export function SearchControls() {
 }
 ```
 
-`SearchControls` takes no props. This is intentional — not an oversight. The component owns its own input state and will own its own search execution. The question is: if `SearchControls` triggers a search that writes new jobs to the DB, how does `JobsTable` (a sibling with no shared state) display the new rows?
+`SearchControls` takes no props. This is intentional — not an oversight. The component owns its own input state and will own its own search execution. The question is: if `SearchControls` triggers a search that writes new jobs to the DB, how does `FindJobsClient` (a sibling with no shared state) display the new rows?
 
-The answer is `router.refresh()` — a Next.js App Router primitive that re-triggers the Server Component tree without a full navigation. In Feature 10, after the `POST /api/agent/find` call completes, `SearchControls` will call `router.refresh()`. This tells Next.js to re-run `FindJobsPage` on the server, re-fetch jobs from the DB, and re-render `JobsTable` with the updated `jobs` prop. The two components never need to share state directly — the server re-render is the synchronization mechanism.
+The answer is `router.refresh()` — a Next.js App Router primitive that re-triggers the Server Component tree without a full navigation. In Feature 10, after the `POST /api/agent/find` call completes, `SearchControls` will call `router.refresh()`. This tells Next.js to re-run `FindJobsPage` on the server, re-fetch jobs from the DB, and pass the updated `jobs` prop to `FindJobsClient`. The two components never need to share state directly — the server re-render is the synchronization mechanism.
 
-This is why `SearchControls` and `JobsTable` are siblings rather than `SearchControls` wrapping `JobsTable`. If `SearchControls` wrapped `JobsTable`, it would need to manage job data as state — turning it into both a form controller and a data container. That coupling would make both harder to test and harder to replace with real data in Feature 11. The sibling pattern keeps each component responsible for exactly one thing.
+`SearchControls` and `FindJobsClient` are siblings on the page, and within `FindJobsClient` the container/leaf pattern applies: `FindJobsClient` is the "brain" that owns `filterText`, `matchFilter`, `sort`, and `page` state, computes the `filtered` pipeline, and passes typed props down. `JobFilters`, `JobsTable`, and `JobsPagination` are the "leaves" — purely presentational components that own no state and render only what they receive as props. This matters for Feature 11: when filtering moves to DB queries, only `FindJobsClient` changes. The three leaves stay completely unchanged because they know nothing about where the data comes from — only what shape to render.
 
-**Checkpoint:** `SearchControls` and `JobsTable` are siblings on the page — neither wraps the other. In Feature 10, clicking "Find Jobs" in `SearchControls` must cause `JobsTable` to show new jobs. Given that the two components share no state and no parent client component, what is the one-line call that makes this work?
+> **Design patterns — Container/leaf decomposition:** Separating "who owns data" from "who renders data" is the core of the container/presentational pattern. A container manages state, derives values, and coordinates side effects. A leaf renders markup from props, with no knowledge of the upstream data source. This separation means data logic changes never ripple into presentational code, and presentational changes never require touching data logic. The pattern appears in every UI framework under different names — "smart/dumb components," "stateful/stateless," "connected/pure" — but the underlying principle is identical.
+
+**Checkpoint:** `SearchControls` and `FindJobsClient` are siblings on the page — neither wraps the other. In Feature 10, clicking "Find Jobs" in `SearchControls` must cause `FindJobsClient` to show new jobs. Given that the two components share no state and no parent client component, what is the one-line call that makes this work?
 
 <details>
 <summary>Reveal answer</summary>
 
-`router.refresh()` — called inside `SearchControls` after the API call completes. `useRouter()` from `next/navigation` provides the `router` object; `router.refresh()` re-runs the Server Component for the current URL, which re-fetches jobs from the DB and passes the new `jobs` prop to `JobsTable`. Neither component needs to know the other exists. The server is the shared state.
+`router.refresh()` — called inside `SearchControls` after the API call completes. `useRouter()` from `next/navigation` provides the `router` object; `router.refresh()` re-runs the Server Component for the current URL, which re-fetches jobs from the DB and passes the new `jobs` prop to `FindJobsClient`. `FindJobsClient` then distributes the updated data to `JobsTable` via its own `useMemo` pipeline. Neither `SearchControls` nor `FindJobsClient` needs to know the other exists. The server is the shared state.
 
 </details>
 
@@ -377,11 +398,26 @@ The design image takes precedence over the token documentation because the user'
 
 ---
 
-## Part 6 — Module-level components and the React re-mounting rule
+## Part 6 — Pure utilities in `lib/`, module-level components in the component file
 
-In [`components/find-jobs/JobsTable.tsx`](../../../components/find-jobs/JobsTable.tsx), `MatchScoreBar` is defined at module scope — above and outside `JobsTable`:
+Open [`lib/utils.ts`](../../../lib/utils.ts) and [`components/find-jobs/JobsTable.tsx`](../../../components/find-jobs/JobsTable.tsx):
+
+```ts
+// lib/utils.ts
+export function getMatchBarColor(score: number): string {
+  if (score >= 90) return "var(--color-success)";
+  if (score >= 80) return "var(--color-info-medium)";
+  if (score >= 50) return "var(--color-warning)";
+  return "var(--color-text-muted)";
+}
+
+export function formatRelativeDate(dateStr: string): string { ... }
+```
 
 ```tsx
+// components/find-jobs/JobsTable.tsx
+import { getMatchBarColor, formatRelativeDate } from "@/lib/utils";
+
 function MatchScoreBar({ score }: { score: number }) {
   return (
     <div className="flex items-center gap-2">
@@ -396,15 +432,12 @@ function MatchScoreBar({ score }: { score: number }) {
   );
 }
 
-// ... then below:
-export function JobsTable({ jobs }: Props) {
-  // JobsTable implementation
-}
+export function JobsTable({ jobs }: Props) { ... }
 ```
 
-As covered in Tutorial 06 with `TagInput`, React identifies a component's type by reference. If `MatchScoreBar` were defined inside `JobsTable`'s function body, a new function object would be created on every render of `JobsTable`. Even if both functions have identical code, `newFn === oldFn` is `false` — JavaScript functions are objects, and two distinct object literals are never equal. React sees a different type reference each render and treats it as a completely different component. Instead of diffing and updating the DOM, it unmounts the old `MatchScoreBar` and mounts a brand-new one from scratch. This causes any internal state in the sub-component to reset, and the DOM update is more expensive than a diff would be.
+`getMatchBarColor` and `formatRelativeDate` are in `lib/utils.ts`, not in the component file. The boundary rule: if a function can be tested with `expect(fn(input)).toBe(output)` without mounting any React component, it belongs in `lib/`. These two functions take a primitive and return a primitive — no JSX, no hooks, no state. Locking them in a component file means Feature 14's Dashboard cannot use them without copy-pasting, and they are invisible to anyone who searches `lib/` for formatting utilities.
 
-For `MatchScoreBar` specifically, this remount is invisible at runtime because the component has no internal state — it's a pure function of `score`. But the ESLint rule `react-hooks/static-components` will flag it, and the pattern is wrong regardless: a component defined inside a render function depends on the containing closure even when it doesn't need to, and it buries a performance penalty waiting to become visible the moment anyone adds state to the sub-component.
+`MatchScoreBar` correctly stays in `JobsTable.tsx` — it renders JSX, so `lib/` cannot own it. But it lives at module scope, not inside `JobsTable`'s function body. As covered in Tutorial 06 with `TagInput`, React identifies a component's type by reference. If `MatchScoreBar` were defined inside `JobsTable`'s function body, a new function object would be created on every render of `JobsTable`. `newFn === oldFn` is `false` — JavaScript functions are objects, and two distinct object literals are never equal. React sees a different type reference each render and treats it as a completely different component: it unmounts the old `MatchScoreBar` and mounts a brand-new one from scratch. This causes any internal state in the sub-component to reset, and the DOM update is more expensive than a diff would be.
 
 > **Design patterns — Object reference identity:** React's component reconciliation algorithm uses `===` equality to compare component types between renders. This is a general pattern across many frameworks: "is this the same thing I had before?" is answered by identity (same reference), not structural equality (same shape). Two objects with identical contents are not the same object. Any system that tracks "has this changed" by reference rather than value will exhibit this behavior — the solution is always to ensure the reference is stable across the relevant scope.
 
@@ -421,7 +454,7 @@ Array literals create new object references on every execution. `[...MOCK_JOBS]`
 
 ## Part 7 — The `useMemo` pipeline and `safePage` pagination math
 
-Open the state and `useMemo` block in [`components/find-jobs/JobsTable.tsx`](../../../components/find-jobs/JobsTable.tsx):
+Open the state and `useMemo` block in [`components/find-jobs/FindJobsClient.tsx`](../../../components/find-jobs/FindJobsClient.tsx):
 
 ```tsx
 const [filterText, setFilterText] = useState("");
@@ -545,13 +578,13 @@ The icon is painted on top of the input's left edge. Without `pointer-events-non
 
 ## Full data flow: user types "ver" in the filter input
 
-1. User types `"v"` in the "Filter by company or role..." input inside `JobsTable`. The `onChange` handler calls `handleTextChange("v")`.
-2. `handleTextChange("v")` calls `setFilterText("v")` and `setPage(1)`. React batches both state updates into a single re-render.
-3. `filtered` `useMemo` recomputes. `filterText.trim()` is `"v"` (truthy). `q = "v"`. Each job is tested: `"vercel".includes("v")` → true; `"stripe".includes("v")` → false; etc. Only the Vercel job passes. `filtered = [{ company: "Vercel", ... }]`.
+1. User types `"v"` in the "Filter by company or role..." input inside `JobFilters`. The `onChange` handler calls `onFilterTextChange("v")` — a handler passed down from `FindJobsClient`.
+2. `FindJobsClient.handleFilterTextChange("v")` calls `setFilterText("v")` and `setPage(1)`. React batches both state updates into a single re-render of `FindJobsClient`.
+3. `filtered` `useMemo` in `FindJobsClient` recomputes. `filterText.trim()` is `"v"` (truthy). `q = "v"`. Each job is tested: `"vercel".includes("v")` → true; `"stripe".includes("v")` → false; etc. Only the Vercel job passes. `filtered = [{ company: "Vercel", ... }]`.
 4. `totalCount = 1`. `totalPages = 1`. `safePage = Math.min(1, 1) = 1`. `startIdx = 0`. `pageItems = [vercelJob]`.
-5. The table body renders one `<tr>` for Vercel. `MatchScoreBar` receives `score={94}`. `getMatchBarColor(94)` returns `"var(--color-success)"`. The fill div gets `style={{ width: "94%", backgroundColor: "var(--color-success)" }}`.
+5. `FindJobsClient` passes `pageItems` to `JobsTable`. `JobsTable` renders one `<tr>` for Vercel. `MatchScoreBar` receives `score={94}`. `getMatchBarColor(94)` (imported from `lib/utils.ts`) returns `"var(--color-success)"`. The fill div gets `style={{ width: "94%", backgroundColor: "var(--color-success)" }}`.
 6. The browser resolves `var(--color-success)` from the `@theme` block in `globals.css` and paints the fill green.
-7. Pagination row shows "Showing **1** to **1** of **1** results." Previous and Next are both disabled.
+7. `FindJobsClient` passes `page=1`, `totalPages=1`, `totalCount=1`, `startIdx=0` to `JobsPagination`. Pagination shows "Showing **1** to **1** of **1** results." Previous and Next are both disabled.
 
 ---
 

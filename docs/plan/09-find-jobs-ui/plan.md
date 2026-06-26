@@ -2,11 +2,14 @@
 
 ## What was built
 
+- **`lib/utils.ts`** — created; exports `MATCH_THRESHOLD = 70`, `getMatchBarColor(score)`, and `formatRelativeDate(dateStr)`. Canonical location for shared pure utilities per CLAUDE.md.
 - **`components/find-jobs/SearchControls.tsx`** — `"use client"` component; two labeled inputs (JOB TITLE, LOCATION) + Find Jobs button + conditional success banner. No props — placeholder for Feature 10.
-- **`components/find-jobs/JobsTable.tsx`** — `"use client"` component; accepts `jobs: Job[]` prop; client-side filter/sort/pagination via `useMemo`. Contains module-level sub-components `MatchScoreBar` and helpers `getMatchBarColor`, `formatRelativeDate`.
-- **`app/find-jobs/page.tsx`** — replaced placeholder; async Server Component; auth guard (`redirect("/login")` if no session); defines `MOCK_JOBS: Job[]` (6 entries, `found_at` computed relative to `Date.now()`); renders `<Navbar />`, `<SearchControls />`, `<JobsTable jobs={MOCK_JOBS} />`.
-- **`lib/utils.ts`** — created; exports `MATCH_THRESHOLD = 70`. This is the canonical location for the threshold per CLAUDE.md.
-- **`context/ui-registry.md`** — added `SearchControls` and `JobsTable` entries with class tables and pattern notes.
+- **`components/find-jobs/JobFilters.tsx`** — `"use client"` presentational component; filter text input + All/High/Low match dropdown + Match Score/Newest/Oldest sort dropdown. Receives all values and handlers as props; owns no state. Exports `MatchFilter` and `Sort` types.
+- **`components/find-jobs/JobsTable.tsx`** — `"use client"` presentational component; accepts `jobs: Job[]` (the already-filtered page slice) and renders table rows only. No state, no filtering logic. Contains module-level `MatchScoreBar` sub-component. Imports `getMatchBarColor` and `formatRelativeDate` from `lib/utils.ts`.
+- **`components/find-jobs/JobsPagination.tsx`** — `"use client"` presentational component; renders "Showing X to Y of Z", page number buttons, and Previous/Next. Accepts `page`, `totalPages`, `totalCount`, `startIdx`, `pageNumbers`, and `onPageChange` as props; owns no state.
+- **`components/find-jobs/FindJobsClient.tsx`** — `"use client"` container component; accepts `jobs: Job[]` from the Server Component; owns `filterText`, `matchFilter`, `sort`, and `page` state; computes the `filtered` `useMemo` pipeline and pagination math; passes typed props to `JobFilters`, `JobsTable`, and `JobsPagination`.
+- **`app/find-jobs/page.tsx`** — replaced placeholder; async Server Component; auth guard (`redirect("/login")` if no session); defines `MOCK_JOBS: Job[]` (6 entries, `found_at` computed relative to `Date.now()`); renders `<Navbar />`, `<SearchControls />`, `<FindJobsClient jobs={MOCK_JOBS} />`.
+- **`context/ui-registry.md`** — added `SearchControls`, `FindJobsClient`, `JobFilters`, `JobsTable`, and `JobsPagination` entries.
 - **`context/progress-tracker.md`** — Feature 09 marked complete; current phase updated to Feature 10.
 
 ## Schema changes
@@ -15,10 +18,11 @@ None. Feature 09 is UI-only with mock data. No DB reads or writes.
 
 ## Key invariants
 
-- **`MATCH_THRESHOLD` lives in `lib/utils.ts` only.** Import it; never hardcode `70` in component logic. `JobsTable` already imports it — any future filter that branches on this threshold must import from the same source.
+- **`MATCH_THRESHOLD`, `getMatchBarColor`, and `formatRelativeDate` live in `lib/utils.ts` only.** All three are pure functions — they take a value and return a value, with no React dependency. Import them from `lib/utils.ts`; never redefine them in component files.
+- **`FindJobsClient` owns all state and derived data; `JobFilters`, `JobsTable`, and `JobsPagination` own none.** The three leaf components are purely presentational: props in, JSX out, no `useState`, no `useMemo`. Feature 11 will modify `FindJobsClient` only when filtering moves to DB queries — the leaves stay frozen.
 - **`MOCK_JOBS` is defined inside the Server Component function, not at module level.** `found_at` is computed with `Date.now()` so timestamps stay relative to the actual request time. Moving it to module level would freeze timestamps at server startup.
-- **`MatchScoreBar` and `getMatchBarColor` are module-level, not inside the component function.** React treats a component type defined inside a render function as a new type on every render, causing unnecessary remount. Both must stay outside `JobsTable`.
-- **Match score bar fill uses inline `style={{ backgroundColor: getMatchBarColor(score) }}`, not a Tailwind class.** The fill color is dynamic (computed from `score` at runtime). Tailwind's static class system cannot express runtime-computed values. Any future change to score coloring must keep this as inline style.
-- **`SearchControls` has no props intentionally.** It is a placeholder shell — its `handleSearch` function sets a hardcoded stub `searchStatus`. In Feature 10, `handleSearch` will call `POST /api/agent/find`. Do not pass data into `SearchControls` from the page; Feature 10's wiring happens inside the component via API call + `router.refresh()`.
-- **Every filter/sort/page change must reset `page` to 1.** `handleFilterChange`, `handleSortChange`, and `handleTextChange` all call `setPage(1)`. If any future filter is added without this reset, users can land on a page that doesn't exist for the new filtered dataset.
-- **`safePage = Math.min(page, totalPages)` must be used everywhere pagination math is needed.** `page` state can lag behind `totalPages` when filters reduce the dataset. Using raw `page` for slice calculations would produce an empty result instead of the last valid page.
+- **`MatchScoreBar` is defined at module scope in `JobsTable.tsx`, not inside the component function.** React uses reference equality to identify component types; defining a component inside a render function creates a new reference on every render, causing unnecessary remount.
+- **Match score bar fill uses inline `style={{ backgroundColor: getMatchBarColor(score) }}`, not a Tailwind class.** The fill color is dynamic (computed from `score` at runtime). Tailwind's static scanner cannot generate classes for runtime-computed values.
+- **`SearchControls` has no props intentionally.** It is a placeholder shell — Feature 10 wires the real API call inside the component via `router.refresh()`, not via props from the page.
+- **Every filter/sort/page change in `FindJobsClient` calls `setPage(1)`.** Changing the dataset without resetting the page can produce a stale page that no longer exists in the filtered result.
+- **`safePage = Math.min(page, totalPages)` must be used for all pagination math.** `page` state can lag behind `totalPages` when filters reduce the dataset; `safePage` clamps the display page to the valid range.
