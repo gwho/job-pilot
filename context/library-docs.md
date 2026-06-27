@@ -242,6 +242,75 @@ const { data: signed } = await insforge.storage
 
 ---
 
+## Apify (JobsDB HK Job Discovery)
+
+**Consumer skill (Store + CLI):** `/apify-ultimate-scraper` installed at `.agents/skills/apify-ultimate-scraper/`. Use for: searching the Store, fetching actor input schemas, testing runs. Requires `apify login` or `APIFY_TOKEN` env var in shell.
+
+**Runtime SDK (`apify-client`):** Used by `lib/apify.ts` inside Next.js. Never uses the CLI — pure HTTP calls with env var auth.
+
+**Actor-building (development only):** `apify create` to scaffold, `apify run` to test locally, `apify push` to deploy. Actor lives in `apify/jobsdb-hk-actor/`. Requires `apify login`.
+
+### Runtime pattern — `lib/apify.ts`
+
+```typescript
+import { ApifyClient } from 'apify-client';
+
+const client = new ApifyClient({ token: process.env.APIFY_TOKEN! });
+
+const run = await client
+  .actor(process.env.APIFY_JOBSDB_ACTOR_ID!)
+  .call(input, { timeoutSecs: 270 }); // slightly under route's maxDuration
+
+if (run.status !== 'SUCCEEDED') {
+  throw new Error(`Actor run ${run.status}`);
+}
+
+const { items } = await client.dataset(run.defaultDatasetId!).listItems();
+```
+
+### Auth/session boundary
+
+The actor loads a Playwright `storageState` from the **Apify KV store** under the key `JOBSDB_SESSION`. The developer captures this manually and uploads it once to Apify. JobPilot never stores JobsDB credentials. See `docs/plan/10b-jobsdb-discovery/session-capture.md` for the full capture process.
+
+### JobsDB job record mapping
+
+```typescript
+// In app/api/agent/find/route.ts — after discoverJobsDbJobs()
+{
+  user_id: userId,
+  run_id: runId,
+  source: 'search',
+  source_provider: 'jobsdb_hk',   // always set for JobsDB rows
+  source_url: job.sourceUrl,
+  external_apply_url: job.externalApplyUrl ?? job.sourceUrl,
+  title: job.title,
+  company: job.company,
+  location: job.location,
+  salary: job.salary ?? null,
+  job_type: jobType,               // normalized from jobType string
+  about_role: job.description,     // full detail-page description
+}
+```
+
+### Deduplication
+
+Before insert, query `jobs` for `user_id + source_provider='jobsdb_hk'` and build a `Set<source_url>`. Also dedupe within the batch. Skip rows with existing `source_url` — no fuzzy matching in v1.
+
+### Required env vars
+
+- `APIFY_TOKEN` — from https://console.apify.com/settings/integrations
+- `APIFY_JOBSDB_ACTOR_ID` — returned by `apify push` (format: `username/actor-name` or numeric ID)
+
+**Rules:**
+
+- Never use the `apify` CLI in runtime code — only `apify-client` SDK in `lib/apify.ts`
+- `route.ts` sets `export const maxDuration = 300` — tune to deployment plan (Vercel Hobby max is 60s)
+- Session expiry check: if the actor returns 0 results and you expect some, the session may be expired — re-capture storageState
+- `source_provider` is always `'jobsdb_hk'` for JobsDB rows — never omit it
+- Success message format: `Found X jobs and saved Y new jobs.` (X = discovered, Y = newly inserted after dedupe)
+
+---
+
 ## Adzuna API
 
 **Check first:** Check AGENTS.md for an installed Adzuna skill. If none exists — use this file and the official Adzuna API docs.

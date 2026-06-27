@@ -34,7 +34,7 @@ export function SearchControls({
       <div className="flex items-end gap-4">
         <div className="flex-1">
           <label className="block text-xs font-medium text-text-secondary uppercase tracking-wide mb-1">
-            Job Title
+            Job title or keywords
           </label>
           <div className="relative">
             <Search

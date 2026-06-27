@@ -7,7 +7,7 @@ Update this file after every completed feature. Any AI agent reading this should
 ## Current Status
 
 **Phase:** Phase 3 — Find Jobs Page
-**Last completed:** 10 Adzuna Job Discovery
+**Last completed:** 10b JobsDB HK Job Discovery
 **Next:** 11 Filter + Sort + Pagination
 
 ---
@@ -32,6 +32,7 @@ Update this file after every completed feature. Any AI agent reading this should
 
 - [x] 09 Find Jobs Page — Full UI
 - [x] 10 Adzuna Job Discovery
+- [x] 10b JobsDB HK Job Discovery
 - [ ] 11 Filter + Sort + Pagination
 
 ### Phase 4 — Job Details Page

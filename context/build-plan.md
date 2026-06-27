@@ -203,6 +203,39 @@ Agent calls Adzuna API to find jobs matching user's search criteria, scores them
 
 ---
 
+### 10b JobsDB HK Job Discovery
+
+Replace Adzuna with a custom Apify actor scraping JobsDB Hong Kong as the active job discovery
+path. Adzuna code (`lib/adzuna.ts`) is preserved but bypassed. The existing Nemotron batch
+scoring pipeline is unchanged.
+
+**Full spec:** `context/jobsdb-apify-plan.md`
+
+**DB change:**
+- Add `source_provider text` (nullable) to `jobs` table via InsForge MCP `run-raw-sql`.
+
+**New files:**
+- `apify/jobsdb-hk-actor/` — Playwright/Crawlee actor with agreed input/output contract.
+- `lib/apify.ts` — Apify API client: start actor, wait for completion, read dataset.
+- `agent/jobsdb.ts` — normalize actor output → generic `ScoringInput[]`.
+
+**Modified files:**
+- `types/index.ts` — add `source_provider: string | null` to `Job` and `JobInsert`.
+- `agent/job-matcher.ts` — change `scoreJobs` signature from `AdzunaJob[]` to `ScoringInput[]`
+  (extract minimal type: `{ title, company, location, description }`). Both adapters normalize to
+  this shape before scoring.
+- `app/api/agent/find/route.ts` — swap Adzuna call for JobsDB adapter; add URL-based dedupe query
+  (`user_id + source_provider + source_url`) before insert; update success message to
+  `Found X jobs and saved Y new jobs.`; set `source_provider: "jobsdb_hk"` on records.
+- `components/find-jobs/SearchControls.tsx` — label "Job Title" → "Job title or keywords".
+
+**PostHog events:** `job_search_started`, `job_found` — unchanged.
+
+**Non-goals for v1:** multiple providers, source selector, background polling, scheduled searches,
+credential storage, fuzzy dedupe.
+
+---
+
 ### 11 Filter + Sort + Pagination
 
 Wire filter tabs, sort dropdown, text search, and pagination to real InsForge DB data.

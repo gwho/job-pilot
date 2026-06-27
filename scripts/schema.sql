@@ -63,6 +63,7 @@ CREATE TABLE IF NOT EXISTS jobs (
   run_id              UUID        REFERENCES agent_runs(id) ON DELETE SET NULL,
   user_id             UUID        NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
   source              TEXT        NOT NULL,
+  source_provider     TEXT,
   source_url          TEXT,
   external_apply_url  TEXT,
   title               TEXT,

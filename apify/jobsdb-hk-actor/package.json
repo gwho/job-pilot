@@ -1,0 +1,22 @@
+{
+  "name": "jobsdb-hk-actor",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "JobsDB HK job scraper actor for JobPilot",
+  "main": "src/main.ts",
+  "scripts": {
+    "start": "node --experimental-vm-modules --loader ts-node/esm src/main.ts",
+    "dev": "apify run",
+    "push": "apify push"
+  },
+  "dependencies": {
+    "apify": "^3.0.0",
+    "crawlee": "^3.0.0",
+    "playwright": "^1.44.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "ts-node": "^10.9.0",
+    "typescript": "^5.0.0"
+  }
+}
