@@ -1,0 +1,10 @@
+{
+  "actorSpecification": 1,
+  "name": "jobsdb-hk-actor",
+  "title": "JobsDB HK Job Scraper",
+  "description": "Scrapes JobsDB Hong Kong search results and full job detail pages using an authenticated Playwright session.",
+  "version": "0.1",
+  "buildTag": "latest",
+  "input": "./input_schema.json",
+  "dockerfile": "../Dockerfile"
+}

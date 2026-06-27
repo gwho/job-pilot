@@ -4,8 +4,14 @@
 // matches agent/extractor.ts and the Nemotron section of context/library-docs.md.
 import OpenAI from "openai";
 
-import type { AdzunaJob } from "@/lib/adzuna";
 import type { Profile } from "@/types/index";
+
+export type ScoringInput = {
+  title: string;
+  company: string;
+  location: string;
+  description: string;
+};
 
 export type JobScore = {
   matchScore: number; // 0-100
@@ -59,11 +65,11 @@ function buildProfileSummary(profile: Profile | null): string {
   ].join("\n");
 }
 
-function buildJobsList(jobs: AdzunaJob[]): string {
+function buildJobsList(jobs: ScoringInput[]): string {
   return jobs
     .map(
       (job, i) =>
-        `Job ${i + 1}:\nTitle: ${job.title}\nCompany: ${job.company.display_name}\nLocation: ${job.location.display_name}\nDescription: ${job.description}`,
+        `Job ${i + 1}:\nTitle: ${job.title}\nCompany: ${job.company}\nLocation: ${job.location}\nDescription: ${job.description}`,
     )
     .join("\n\n");
 }
@@ -77,7 +83,7 @@ function buildJobsList(jobs: AdzunaJob[]): string {
  * neutral score rather than failing the whole search.
  */
 export async function scoreJobs(
-  jobs: AdzunaJob[],
+  jobs: ScoringInput[],
   profile: Profile | null,
 ): Promise<JobScore[]> {
   if (jobs.length === 0) {

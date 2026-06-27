@@ -1,11 +1,15 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import { createInsforgeServer } from "@/lib/insforge-server";
-import { searchJobs, detectCountry } from "@/lib/adzuna";
+import { discoverJobsDbJobs, toScoringInput } from "@/agent/jobsdb";
 import { scoreJobs } from "@/agent/job-matcher";
 import { captureServerEvent } from "@/lib/posthog-server";
 import { MATCH_THRESHOLD } from "@/lib/utils";
 import type { Profile, JobInsert } from "@/types/index";
+
+// Block on actor run + dataset read — set high enough for a 10-job scrape.
+// Vercel Pro max is 300s; adjust down for Hobby (60s) or self-hosted.
+export const maxDuration = 300;
 
 export async function POST(request: NextRequest) {
   try {
@@ -34,8 +38,6 @@ export async function POST(request: NextRequest) {
         { status: 400 },
       );
     }
-
-    const country = detectCountry(location);
 
     // Profile is best-effort — a null/sparse profile still produces a search.
     const { data: profile } = await insforge.database
@@ -74,12 +76,12 @@ export async function POST(request: NextRequest) {
       properties: { userId, jobTitle, location },
     });
 
-    // Adzuna search — failure marks the run failed and returns 500.
-    let adzunaJobs;
+    // JobsDB HK discovery via Apify actor — failure marks run failed + returns 500.
+    let jobsDbJobs;
     try {
-      adzunaJobs = await searchJobs(jobTitle, location, country);
+      jobsDbJobs = await discoverJobsDbJobs(jobTitle, location, 10);
     } catch (error) {
-      console.error("[api/agent/find] adzuna error:", error);
+      console.error("[api/agent/find] jobsdb error:", error);
       await insforge.database
         .from("agent_runs")
         .update({ status: "failed", completed_at: new Date().toISOString() })
@@ -91,33 +93,57 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Batch scoring — index-aligned to adzunaJobs (best-effort, never throws).
-    const scores = await scoreJobs(adzunaJobs, (profile as Profile) ?? null);
+    // URL-based deduplication: skip any sourceUrl already in the DB for this user + provider.
+    const existingUrlsResult = await insforge.database
+      .from("jobs")
+      .select("source_url")
+      .eq("user_id", userId)
+      .eq("source_provider", "jobsdb_hk");
 
-    // Build one job record per Adzuna result + its score.
-    const records: JobInsert[] = adzunaJobs.map((job, i) => {
+    const existingUrls = new Set(
+      (existingUrlsResult.data ?? []).map((r: { source_url: string | null }) => r.source_url).filter(Boolean),
+    );
+
+    // Also dedupe within the batch by canonical sourceUrl.
+    const seenInBatch = new Set<string>();
+    const newJobs = jobsDbJobs.filter((job) => {
+      if (!job.sourceUrl || existingUrls.has(job.sourceUrl) || seenInBatch.has(job.sourceUrl)) {
+        return false;
+      }
+      seenInBatch.add(job.sourceUrl);
+      return true;
+    });
+
+    const totalFound = jobsDbJobs.length;
+
+    // Batch scoring — index-aligned to newJobs (best-effort, never throws).
+    const scores = await scoreJobs(
+      newJobs.map(toScoringInput),
+      (profile as Profile) ?? null,
+    );
+
+    // Build one job record per new job + its score.
+    const records: JobInsert[] = newJobs.map((job, i) => {
       const score = scores[i];
-      const salary =
-        job.salary_min && job.salary_max
-          ? `$${Math.round(job.salary_min / 1000)}k - $${Math.round(job.salary_max / 1000)}k`
-          : null;
+      const jobType =
+        job.jobType?.toLowerCase().includes("part")
+          ? "parttime"
+          : job.jobType?.toLowerCase().includes("contract")
+            ? "contract"
+            : "fulltime";
 
       return {
         user_id: userId,
         run_id: runId,
         source: "search",
-        source_url: job.redirect_url,
-        external_apply_url: job.redirect_url,
+        source_provider: "jobsdb_hk",
+        source_url: job.sourceUrl,
+        external_apply_url: job.externalApplyUrl ?? job.sourceUrl,
         title: job.title,
-        company: job.company.display_name,
-        location: job.location.display_name,
-        salary,
-        job_type:
-          job.contract_type === "part_time"
-            ? "parttime"
-            : job.contract_type === "contract"
-              ? "contract"
-              : "fulltime",
+        company: job.company,
+        location: job.location,
+        salary: job.salary ?? null,
+        job_type: jobType,
         about_role: job.description,
         responsibilities: null,
         requirements: null,
@@ -132,7 +158,28 @@ export async function POST(request: NextRequest) {
       };
     });
 
-    // Persist all jobs in one insert, returning the saved rows for the client.
+    if (records.length === 0) {
+      // All discovered jobs already in DB — still mark run complete.
+      await insforge.database
+        .from("agent_runs")
+        .update({
+          status: "completed",
+          jobs_found: 0,
+          completed_at: new Date().toISOString(),
+        })
+        .eq("id", runId)
+        .eq("user_id", userId);
+
+      return NextResponse.json({
+        success: true,
+        jobs: [],
+        jobsFound: totalFound,
+        newJobs: 0,
+        successMessage: `Found ${totalFound} jobs — all already saved.`,
+      });
+    }
+
+    // Persist only new jobs, returning saved rows for the client.
     const { data: insertedJobs, error: jobsError } = await insforge.database
       .from("jobs")
       .insert(records)
@@ -151,7 +198,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const totalFound = insertedJobs.length;
+    const newCount = insertedJobs.length;
     const strongMatches = insertedJobs.filter(
       (j) => (j.match_score ?? 0) >= MATCH_THRESHOLD,
     ).length;
@@ -165,6 +212,7 @@ export async function POST(request: NextRequest) {
           properties: {
             userId,
             source: "search",
+            sourceProvider: "jobsdb_hk",
             matchScore: job.match_score,
             company: job.company,
           },
@@ -177,7 +225,7 @@ export async function POST(request: NextRequest) {
       .from("agent_runs")
       .update({
         status: "completed",
-        jobs_found: totalFound,
+        jobs_found: newCount,
         completed_at: new Date().toISOString(),
       })
       .eq("id", runId)
@@ -187,8 +235,9 @@ export async function POST(request: NextRequest) {
       success: true,
       jobs: insertedJobs,
       jobsFound: totalFound,
+      newJobs: newCount,
       strongMatches,
-      successMessage: `Found ${totalFound} jobs and saved ${strongMatches} strong matches.`,
+      successMessage: `Found ${totalFound} jobs and saved ${newCount} new jobs.`,
     });
   } catch (error) {
     console.error("[api/agent/find]", error);

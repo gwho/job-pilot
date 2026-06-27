@@ -1,6 +1,7 @@
 // ============================================================
 // JobPilot — canonical database types
 // Generated against live InsForge schema on 2026-06-17.
+// Updated 2026-06-26: added JobProvider union + source_provider to Job (Feature 10b).
 // If you change the database schema, update this file to match.
 // ============================================================
 
@@ -14,6 +15,7 @@ export type RemotePreference = 'remote' | 'onsite' | 'hybrid' | 'any'
 export type CoverLetterTone = 'formal' | 'casual' | 'enthusiastic'
 export type WorkAuthorization = 'citizen' | 'permanent_resident' | 'visa_required'
 export type JobSource = 'search' | 'url'
+export type JobProvider = 'adzuna' | 'jobsdb_hk'
 export type JobType = 'fulltime' | 'parttime' | 'contract'
 export type AgentRunStatus = 'running' | 'completed' | 'failed'
 export type LogLevel = 'info' | 'success' | 'warning' | 'error'
@@ -117,6 +119,7 @@ export interface Job {
   run_id: string | null
   user_id: string
   source: JobSource
+  source_provider: JobProvider | null
   source_url: string | null
   external_apply_url: string | null
   title: string | null
