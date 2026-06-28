@@ -9,9 +9,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
-npm run dev      # Start dev server (Next.js 16, http://localhost:3000)
-npm run build    # Production build
-npm run lint     # Run ESLint
+npm run dev       # Start dev server (Next.js 16, http://localhost:3000)
+npm run build     # Production build
+npm run lint      # Run ESLint
+npm run test:run  # Run Vitest tests once (CI)
+npm run test      # Run Vitest in watch mode
 ```
 
 No test runner is configured. Verify features manually after implementation by running the dev server.
@@ -87,3 +89,19 @@ Tailwind v4 — tokens defined with `@theme` in `app/globals.css`. No `tailwind.
 All in `.env.local`. Required: `NEXT_PUBLIC_INSFORGE_URL`, `NEXT_PUBLIC_INSFORGE_ANON_KEY`, `BROWSERBASE_API_KEY`, `BROWSERBASE_PROJECT_ID`, `OPENROUTER_API_KEY`, `ADZUNA_APP_ID`, `ADZUNA_APP_KEY`, `NEXT_PUBLIC_POSTHOG_KEY`, `NEXT_PUBLIC_POSTHOG_HOST`, `APIFY_TOKEN`, `APIFY_JOBSDB_ACTOR_ID`.
 
 `APIFY_TOKEN` — from https://console.apify.com/settings/integrations. `APIFY_JOBSDB_ACTOR_ID` — the deployed actor ID returned by `apify push` (format: `username/actor-name` or the numeric ID).
+
+---
+
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues (`github.com/gwho/job-pilot`). External PRs are not a triage surface. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default label vocabulary — `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context — `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.

@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Feature 11 Reference — URL View State</title>
+    <link rel="stylesheet" href="../assets/course.css" />
+  </head>
+  <body>
+    <main>
+      <article>
+        <p class="kicker">Reference</p>
+        <h1>Feature 11 URL State Cheat Sheet</h1>
+        <p class="muted">Use this when deciding where state belongs in the Find Jobs flow.</p>
+
+        <div class="grid">
+          <section class="card">
+            <h2>URL View State</h2>
+            <p><code>q</code>, <code>match</code>, <code>sort</code>, and <code>page</code>.</p>
+            <p>These describe how saved job history is being viewed. They survive refresh, sharing, and back navigation.</p>
+          </section>
+
+          <section class="card">
+            <h2>Local Action Inputs</h2>
+            <p><code>jobTitle</code> and <code>location</code>.</p>
+            <p>These drive the discovery action. They stay local because loading a URL must not re-run the actor.</p>
+          </section>
+
+          <section class="card">
+            <h2>Local Display State</h2>
+            <p><code>filterTextDraft</code>.</p>
+            <p>This controls the input while typing. It debounces into URL <code>q</code> after 300ms.</p>
+          </section>
+
+          <section class="card">
+            <h2>Local Data Cache</h2>
+            <p><code>jobs</code>.</p>
+            <p>Seeded from server <code>initialJobs</code>, then merged with API search results using functional <code>setJobs</code>.</p>
+          </section>
+        </div>
+
+        <h2>Rules</h2>
+        <p><strong>Use <code>router.replace()</code></strong> for refinements of the same screen.</p>
+        <p><strong>Use <code>router.push()</code></strong> for navigation to a different page, such as a job detail route.</p>
+        <p><strong>Use <code>!= null</code></strong> for match-score presence checks so both <code>null</code> and <code>undefined</code> mean unscored.</p>
+        <p><strong>Use functional state updates</strong> when merging new jobs into existing jobs.</p>
+      </article>
+    </main>
+  </body>
+</html>

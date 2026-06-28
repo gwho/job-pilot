@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Lesson 0001 — URL View State in JobPilot</title>
+    <link rel="stylesheet" href="../assets/course.css" />
+  </head>
+  <body>
+    <main>
+      <article>
+        <nav class="lesson-nav no-print">
+          <a href="0002-tdd-for-beginners.html">→ Next: TDD for Beginners</a>
+          <a href="../reference/0001-feature-11-url-state-cheatsheet.html">Cheat Sheet</a>
+          <a href="../docs/tutorials/20-filter-sort-pagination-deep-dive/README.md">Full Tutorial</a>
+        </nav>
+
+        <p class="kicker">Lesson 0001</p>
+        <h1>URL View State in JobPilot</h1>
+        <p class="muted">Based on Feature 11 — <a href="../components/find-jobs/FindJobsClient.tsx">FindJobsClient.tsx</a> and <a href="../lib/find-jobs-utils.ts">lib/find-jobs-utils.ts</a>.</p>
+
+        <div class="callout">
+          <strong>One tangible win:</strong> after this lesson you will be able to look at any piece of state in this codebase and decide — URL, local React state, or neither — and explain your reasoning using the actual Find Jobs code.
+        </div>
+
+        <h2>Why this matters for JobPilot</h2>
+        <p>In Feature 12, every job row becomes clickable. A user will filter to "High Match, page 3, sorted by Newest" and click a job to read it. When they press the browser's back button, they need to land exactly back where they were — same filter, same page, same sort.</p>
+        <p>If that state lived in React's <code>useState</code>, pressing back would wipe it completely. React discards component state when you navigate away. The URL survives. That single fact drives most of the design in this feature.</p>
+
+        <h2>Four kinds of state in FindJobsClient</h2>
+        <p>Open <a href="../components/find-jobs/FindJobsClient.tsx">FindJobsClient.tsx</a> (lines 48–62) and find each of these:</p>
+
+        <table class="ref">
+          <thead>
+            <tr><th>Variable</th><th>Where it lives</th><th>Why</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>match</code>, <code>sort</code>, <code>page</code>, <code>q</code></td><td>URL query params</td><td>"What am I looking at?" — must survive back-navigation</td></tr>
+            <tr><td><code>filterTextDraft</code></td><td><code>useState</code> only</td><td>What the user sees while typing — updated every keystroke without hitting the URL</td></tr>
+            <tr><td><code>jobs</code></td><td><code>useState</code></td><td>Seeded from server, merged after search — never a URL param because it is data, not a view setting</td></tr>
+            <tr><td><code>jobTitle</code>, <code>location</code></td><td><code>useState</code></td><td>Agent inputs — a URL reload must not re-run the actor automatically</td></tr>
+          </tbody>
+        </table>
+
+        <h2>The test that proves the parsing rules</h2>
+        <p>Open <a href="../__tests__/find-jobs/utils.test.ts">__tests__/find-jobs/utils.test.ts</a>. These tests describe exactly what happens when the URL contains garbage:</p>
+
+        <pre><code>describe("parseMatch", () =&gt; {
+  it("returns 'all' for null", () =&gt; {
+    expect(parseMatch(null)).toBe("all");   // no ?match= in URL
+  });
+  it("returns 'all' for invalid strings", () =&gt; {
+    expect(parseMatch("HIGH")).toBe("all"); // user typed it manually
+  });
+});</code></pre>
+
+        <p>The function is in <a href="../lib/find-jobs-utils.ts">lib/find-jobs-utils.ts</a>. Any URL the user types — valid or broken — is silently normalised to a sensible default. No crash. No empty screen.</p>
+
+        <h2>The subtlest part: <code>filterTextDraft</code> and the two-effect guard</h2>
+        <p>The text filter has a problem. If we controlled the input directly from the URL, every keystroke would call <code>router.replace()</code> — five URL updates to type "react". The input would feel broken.</p>
+        <p>So we split it into two pieces of state that stay in sync:</p>
+
+        <pre><code>// Display state — updates on every keystroke, controls the input
+const [filterTextDraft, setFilterTextDraft] = useState(q);
+
+// Effect 1: when back-nav changes the URL, reset the input to match
+useEffect(() =&gt; {
+  setFilterTextDraft(q);
+}, [q]);
+
+// Effect 2: when the user types, write to URL after 300ms
+useEffect(() =&gt; {
+  if (filterTextDraft === q) return; // &lt;-- guard: prevents a loop
+  const timeout = window.setTimeout(() =&gt; {
+    replaceViewState({ q: filterTextDraft, page: 1 });
+  }, 300);
+  return () =&gt; window.clearTimeout(timeout);
+}, [filterTextDraft]);</code></pre>
+
+        <p>Without the guard <code>if (filterTextDraft === q) return</code>, pressing back would create an infinite loop: the URL changes → Effect 1 sets the draft → Effect 2 fires → writes to URL → Effect 1 fires again. The guard breaks the cycle because after Effect 1 runs, the draft and the URL are the same, so Effect 2 immediately returns.</p>
+
+        <h2><code>router.replace()</code> not <code>router.push()</code></h2>
+        <p>Every filter/sort/page change calls <code>router.replace()</code>. Imagine if we used <code>push()</code> instead — every filter tweak would add a new back-button step. After five filter changes you would need six back-presses to leave Find Jobs. <code>replace()</code> means "update the current history entry," so the user always has exactly one back-press to leave.</p>
+
+        <div class="grid">
+          <section class="card">
+            <h3>Use <code>replace()</code></h3>
+            <p>Changing filter, sort, or page. Still the same screen, different view of the same data.</p>
+          </section>
+          <section class="card">
+            <h3>Use <code>push()</code></h3>
+            <p>Clicking a job row (Feature 12). Going to a genuinely different page that should get its own back-button entry.</p>
+          </section>
+        </div>
+
+        <!-- Quiz 1 -->
+        <div class="quiz">
+          <h2>Retrieval check 1 — state placement</h2>
+          <p>In Feature 12 you add a "Selected job" panel. The currently selected job ID is needed to highlight the row. Where should it live?</p>
+          <details class="answer">
+            <summary>Reveal answer</summary>
+            <p><strong>URL.</strong> It describes "what I am looking at." The user should be able to share a link to a specific job row, or press back from the detail page and see it highlighted. This is the same rule as <code>match</code> and <code>page</code>.</p>
+          </details>
+        </div>
+
+        <!-- Quiz 2 -->
+        <div class="quiz">
+          <h2>Retrieval check 2 — the guard</h2>
+          <p>You remove the <code>if (filterTextDraft === q) return</code> line from the debounce effect. The user presses the browser back button to restore <code>?q=react</code>. What happens next?</p>
+          <details class="answer">
+            <summary>Reveal answer</summary>
+            <p><strong>Infinite loop.</strong> Back-nav changes the URL → Effect 1 sets <code>filterTextDraft = "react"</code> → Effect 2 fires because <code>filterTextDraft</code> changed → <code>replaceViewState({ q: "react" })</code> runs → URL changes → Effect 1 fires again. Without the guard the cycle never stops.</p>
+          </details>
+        </div>
+
+        <!-- Quiz 3 -->
+        <div class="quiz">
+          <h2>Retrieval check 3 — predict the test output</h2>
+          <p>Without looking at the code, what will <code>parsePage("-1")</code> return? What about <code>parsePage("1.5")</code>?</p>
+          <details class="answer">
+            <summary>Reveal answer</summary>
+            <p>Both return <code>1</code> — the default. <code>-1</code> is not a positive integer. <code>1.5</code> fails the <code>Number.isFinite(n) && n > 0</code> check because <code>parseInt("1.5")</code> returns <code>1</code> — actually that <em>would</em> return 1, not the default. Check the real test in <a href="../__tests__/find-jobs/utils.test.ts">utils.test.ts</a> to verify — the test exists precisely to make you look.</p>
+          </details>
+        </div>
+
+        <h2>Code-tracing exercise</h2>
+        <p>Trace this user action through the real files without running the app:</p>
+        <ol>
+          <li>User is on <code>/find-jobs?match=high&amp;page=3</code></li>
+          <li>User types "react" in the text filter input</li>
+          <li>300ms passes</li>
+        </ol>
+        <p>Answer: what does the URL look like after step 3? Which exact line of code changes it?</p>
+        <details class="answer">
+          <summary>Reveal answer</summary>
+          <p><code>/find-jobs?match=high&amp;page=1&amp;q=react</code>. The <code>page</code> resets to 1 (new search context). The code that runs is the debounce <code>setTimeout</code> callback inside the second <code>useEffect</code> in <a href="../components/find-jobs/FindJobsClient.tsx">FindJobsClient.tsx</a>, which calls <code>replaceViewState({ q: filterTextDraft, page: 1 })</code>.</p>
+        </details>
+
+        <h2>Primary source</h2>
+        <p>Read the official Next.js docs on <a href="https://nextjs.org/docs/app/api-reference/functions/use-search-params">useSearchParams</a>. Focus on two things only: the Suspense boundary requirement, and what "client-only" means for this hook.</p>
+
+        <div class="callout">
+          <strong>Ask your AI teacher:</strong> "Quiz me on when to use <code>router.replace()</code> versus <code>router.push()</code> — give me five scenarios and make me choose."
+        </div>
+      </article>
+    </main>
+  </body>
+</html>

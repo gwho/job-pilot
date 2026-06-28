@@ -21,9 +21,10 @@ function MatchScoreBar({ score }: { score: number }) {
 
 type Props = {
   jobs: Job[];
+  hasNoHistory: boolean;
 };
 
-export function JobsTable({ jobs }: Props) {
+export function JobsTable({ jobs, hasNoHistory }: Props) {
   return (
     <table className="w-full">
       <thead>
@@ -41,6 +42,9 @@ export function JobsTable({ jobs }: Props) {
             Salary Est.
           </th>
           <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wide">
+            Provider
+          </th>
+          <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wide">
             Date Found
           </th>
         </tr>
@@ -49,10 +53,12 @@ export function JobsTable({ jobs }: Props) {
         {jobs.length === 0 ? (
           <tr>
             <td
-              colSpan={5}
+              colSpan={6}
               className="px-6 py-12 text-center text-sm text-text-muted"
             >
-              No jobs match your filters.
+              {hasNoHistory
+                ? "Run a search above to find your first jobs."
+                : "No jobs match your filters."}
             </td>
           </tr>
         ) : (
@@ -75,10 +81,17 @@ export function JobsTable({ jobs }: Props) {
                 {job.title ?? "—"}
               </td>
               <td className="px-6 py-4">
-                <MatchScoreBar score={job.match_score ?? 0} />
+                {job.match_score != null ? (
+                  <MatchScoreBar score={job.match_score} />
+                ) : (
+                  <span className="text-sm text-text-muted">—</span>
+                )}
               </td>
               <td className="px-6 py-4 text-sm text-text-primary">
                 {job.salary ?? "—"}
+              </td>
+              <td className="px-6 py-4 text-sm text-text-primary">
+                {job.source_provider ?? "—"}
               </td>
               <td className="px-6 py-4 text-sm text-text-muted">
                 {formatRelativeDate(job.found_at)}

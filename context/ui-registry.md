@@ -174,22 +174,22 @@ Quote text is `text-2xl font-medium` — larger than body text but not a heading
 ### BottomCTA
 
 File: `components/homepage/BottomCTA.tsx`
-Last updated: 2026-06-15
+Last updated: 2026-06-28
 
 | Property         | Class                                                        |
 | ---------------- | ------------------------------------------------------------ |
 | Background       | `linear-gradient(135deg, var(--color-accent) 0%, var(--color-overlay) 100%)` via inline `style` — CSS variables only, no hex |
-| Border           | `border-white/30` (secondary button)                         |
+| Border           | `border-on-accent-border` (secondary button)                 |
 | Border radius    | `rounded-md` (buttons)                                       |
-| Text — primary   | `text-white` (heading, secondary button), `text-text-primary` (primary button — on white bg) |
-| Text — secondary | `text-white/70` (subheadline)                                |
+| Text — primary   | `text-on-accent` (heading, secondary button), `text-text-primary` (primary button — on surface bg) |
+| Text — secondary | `text-on-accent-muted` (subheadline)                         |
 | Spacing          | `py-24` (section), `px-8` (inner), `gap-6` (vertical), `px-6 py-3` (buttons) |
-| Hover state      | `hover:bg-surface-secondary transition-colors` (primary), `hover:bg-white/10 transition-colors` (secondary) |
+| Hover state      | `hover:bg-surface-secondary transition-colors` (primary), `hover:bg-on-accent-subtle transition-colors` (secondary) |
 | Shadow           | none                                                         |
 | Accent usage     | accent is the gradient start color via CSS variable ref      |
 
 **Pattern notes:**
-The only component in this project using an inline `style` prop. This is the approved exception for gradients: use `var(--color-name)` CSS variable references, never hex values. Text opacity (`text-white/70`) and background opacity (`border-white/30`, `hover:bg-white/10`) use Tailwind's `/` opacity modifier against white — this is correct for dark/gradient backgrounds. Button padding `px-6 py-3` matches Hero CTAs exactly.
+The only component in this project using an inline `style` prop. This is the approved exception for gradients: use `var(--color-name)` CSS variable references, never hex values. On-accent tokens (`text-on-accent`, `text-on-accent-muted`, `border-on-accent-border`, `bg-on-accent-subtle`) are defined in `globals.css` and must be used for any element placed on a dark/gradient accent surface. Button padding `px-6 py-3` matches Hero CTAs exactly. Primary "Get Started" button uses `bg-surface` (not raw `bg-white`) so it participates in the design system.
 
 ---
 
@@ -404,7 +404,7 @@ Last updated: 2026-06-25 (Feature 10)
 | List card | `bg-surface border border-border rounded-2xl shadow-sm` |
 
 **Pattern notes:**
-Container component and the **single owner of `jobs` state** (Feature 10). Owns search state (`jobTitle`, `location`, `isLoading`, `searchStatus`, `jobs`) and view state (`filterText`, `matchFilter`, `sort`, `page`) plus the `useMemo` filter/sort/paginate pipeline (now keyed on the `jobs` state, not a prop). Accepts `initialJobs: Job[]` from the Server Component page and seeds `jobs` from it. `handleSearch()` POSTs `{ jobTitle, location }` to `/api/agent/find` and calls `setJobs(res.jobs)` — the table updates with no page reload. Renders `<SearchControls />` as a child above the list card, then wraps `<JobFilters />`, `<JobsTable />`, `<JobsPagination />`. Every filter/sort change calls `setPage(1)`. `safePage = Math.min(page, totalPages)` guards against filter-induced page drift. In Feature 11, filtering moves to DB queries — only this component changes; leaves stay frozen.
+Container component and the **single owner of `jobs` state**. Owns search state (`jobTitle`, `location`, `isLoading`, `searchStatus`, `jobs`) and derives view state from URL via `useSearchParams()` on every render — `q`, `match`, `sort`, `page` are never in `useState`. One `useState` exception: `filterTextDraft` for the text input, debounced into URL `q` after 300ms. Two `useEffect`s manage sync: `[q]` resets draft on back-nav; `[filterTextDraft]` debounces to URL with `filterTextDraft === q` guard to prevent replace loops. `handleSearch()` merges returned jobs by `id` using functional `setJobs(current => ...)` form. `PAGE_SIZE = 20` defined here; passed as `pageSize={PAGE_SIZE}` to `JobsPagination`. `safePage = Math.min(page, totalPages)` clamps when filters reduce the count. Requires `<Suspense fallback={null}>` in `page.tsx`. Last updated: Feature 11.
 
 ---
 
@@ -427,7 +427,7 @@ Purely presentational — no state. Receives `filterText`, `matchFilter`, `sort`
 ### JobsTable
 
 File: `components/find-jobs/JobsTable.tsx`
-Last updated: 2026-06-25
+Last updated: 2026-06-29 (Feature 11)
 
 | Property        | Class / Value |
 | --------------- | ------------- |
@@ -438,7 +438,7 @@ Last updated: 2026-06-25
 | Match bar fill  | inline `style={{ width: \`${score}%\`, backgroundColor: getMatchBarColor(score) }}` |
 
 **Pattern notes:**
-Purely presentational — receives `jobs: Job[]` (the already-filtered page slice from `FindJobsClient`) and renders table rows only. No state, no filtering logic. `MatchScoreBar` is a module-level sub-component (not inside the render function — see module-level component rule in Feature 05). `getMatchBarColor` and `formatRelativeDate` are imported from `lib/utils.ts`. Match score color tiers: ≥90 → `success`, ≥80 → `info-medium` (blue), ≥50 → `warning` (orange), else → `text-muted`. Bar fill uses inline `style` (not Tailwind) because color is dynamic.
+Purely presentational — receives `jobs: Job[]` (already-filtered page slice) and `hasNoHistory: boolean` from `FindJobsClient`. No state, no filtering logic. Two empty states: `hasNoHistory` true → "Run a search above to find your first jobs."; false (filters active, no matches) → "No jobs match your filters." Score cell: `job.match_score != null ? <MatchScoreBar /> : <span>—</span>` — unscored jobs show `—`, never `0%`. Provider column (`source_provider ?? "—"`) positioned after Match Score. `MatchScoreBar` is a module-level sub-component. `getMatchBarColor` and `formatRelativeDate` imported from `lib/utils.ts`. Bar fill uses inline `style` (not Tailwind) because color is dynamic. 6 columns total: Company, Role, Match Score, Salary Est., Provider, Date Found.
 
 ---
 
@@ -455,7 +455,7 @@ Last updated: 2026-06-25
 | Disabled nav btn   | `text-text-muted cursor-not-allowed` |
 
 **Pattern notes:**
-Purely presentational — receives `page`, `totalPages`, `totalCount`, `startIdx`, `pageNumbers`, `onPageChange` from `FindJobsClient`. Renders "Showing X to Y of Z" count, ellipsis-compressed page number buttons, and Previous/Next. `PAGE_SIZE = 6` is a local constant used for the "to" end calculation in the count display.
+Purely presentational — receives `page`, `totalPages`, `totalCount`, `startIdx`, `pageNumbers`, `pageSize`, `onPageChange` from `FindJobsClient`. `pageSize` is the single source of truth for the "Showing X to Y" upper bound — do not add a local `PAGE_SIZE` constant. Renders ellipsis-compressed page number buttons and Previous/Next. Page numbers use windowed logic (computed in `FindJobsClient`): always shows first, last, current ± 1 neighbour, ellipsis fills gaps — never shows a page list where the current page is absent. Last updated: Feature 11.
 
 ---
 
@@ -505,3 +505,38 @@ export async function myServerAction(payload: MyPayload) {
 - Use a separate `useTransition` per logical operation (save ≠ upload)
 - Return `{ success: boolean; error?: string }` — not thrown errors
 - Call `revalidatePath()` before returning so the page reflects the write immediately
+
+---
+
+## Baseline — Established 2026-06-28
+
+_Established via `/imprint audit` — full codebase scan across 18 components._
+
+| Property | Correct class |
+| --- | --- |
+| Card background | `bg-surface` |
+| Card border | `border border-border` |
+| Card radius | `rounded-2xl` |
+| Card padding | `p-6` |
+| Card shadow (inline panel) | `shadow-sm` |
+| Card shadow (standalone auth/empty-state) | `shadow-lg` |
+| Button — primary | `bg-accent text-accent-foreground text-sm font-medium rounded-md px-4 py-2 hover:bg-accent-dark transition-colors` |
+| Button — secondary | `bg-surface border border-border text-text-primary text-sm font-medium rounded-md px-4 py-2 hover:bg-surface-secondary transition-colors` |
+| Button — overlay (dark) | `bg-overlay text-on-accent text-sm font-medium rounded-md px-4 py-2 hover:bg-overlay-dark transition-colors` |
+| Button — on-accent surface | `bg-surface text-text-primary text-sm font-medium rounded-md px-6 py-3 hover:bg-surface-secondary transition-colors` |
+| Text input | `w-full bg-surface border border-border rounded-md px-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-1 focus:ring-accent` |
+| Text input (icon-prefixed) | same as above but `pl-9` instead of `px-3` |
+| Text input (disabled) | `bg-surface-secondary border border-border rounded-md px-3 py-2 text-sm text-text-muted cursor-not-allowed` |
+| Select dropdown | `appearance-none bg-surface border border-border rounded-md pl-3 pr-8 py-2 text-sm text-text-primary focus:outline-none focus:ring-1 focus:ring-accent cursor-pointer` |
+| Form label | `block text-sm font-medium text-text-dark mb-1.5` |
+| Column / filter header label | `text-xs font-medium text-text-secondary uppercase tracking-wide` |
+| Text — primary | `text-text-primary` |
+| Text — secondary | `text-text-secondary` |
+| Text — muted | `text-text-muted` |
+| Text — on accent surface (primary) | `text-on-accent` |
+| Text — on accent surface (secondary) | `text-on-accent-muted` |
+| Tag pill (skill/category) | `bg-accent-light text-accent text-xs font-medium px-2.5 py-1 rounded-full` |
+| Missing-field pill | `bg-warning-light text-warning text-xs font-medium px-2.5 py-1 rounded-full` |
+| Table row hover | `hover:bg-surface-secondary transition-colors` |
+| Divider / separator | `border-border` |
+| Nested sub-card (inside a card) | `border border-border rounded-xl p-4` (`rounded-xl`, not `rounded-2xl`) |

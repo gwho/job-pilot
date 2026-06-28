@@ -42,7 +42,11 @@ export default async function RootLayout({
   const user = await getPostHogUser();
 
   return (
-    <html lang="en" className={`${inter.variable} h-full antialiased font-sans`}>
+    <html
+      lang="en"
+      className={`${inter.variable} h-full antialiased font-sans`}
+      suppressHydrationWarning
+    >
       <body className="min-h-full bg-background" suppressHydrationWarning>
         <PostHogIdentity userId={user?.id ?? null} email={user?.email ?? null} />
         {children}
