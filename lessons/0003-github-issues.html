@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Lesson 0003 — GitHub Issues</title>
+    <link rel="stylesheet" href="../assets/course.css" />
+  </head>
+  <body>
+    <main>
+      <article>
+        <nav class="lesson-nav no-print">
+          <a href="0002-tdd-for-beginners.html">← Previous: TDD for Beginners</a>
+          <a href="../docs/agents/issue-tracker.md">Issue Tracker Docs</a>
+        </nav>
+
+        <p class="kicker">Lesson 0003</p>
+        <h1>GitHub Issues</h1>
+        <p class="muted">How JobPilot uses GitHub Issues to track decisions, bugs, and work — and how to write one well.</p>
+
+        <div class="callout">
+          <strong>One tangible win:</strong> after this lesson you will understand what a GitHub Issue is, why the format matters, and be able to read issue #19 in this project and explain every section of it.
+        </div>
+
+        <h2>What is a GitHub Issue?</h2>
+        <p>A GitHub Issue is a recorded conversation about something that needs to happen to a codebase. It could be:</p>
+        <ul>
+          <li>A bug — something is broken</li>
+          <li>A task — something needs to be built or changed</li>
+          <li>A question — something needs to be decided before work begins</li>
+        </ul>
+        <p>An issue lives permanently on GitHub, attached to a specific repository. It is not a to-do list on your computer — it is shared with everyone who can see the project, including AI agents that run autonomously.</p>
+        <p>That last point matters for JobPilot. Some issues are written specifically so an AI coding agent can pick them up and implement them without a human in the loop. The issue is the spec.</p>
+
+        <h2>The anatomy of a GitHub Issue</h2>
+        <p>Every issue has these parts:</p>
+
+        <table class="ref">
+          <thead>
+            <tr><th>Part</th><th>What it is</th><th>Example from this project</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Title</strong></td>
+              <td>A one-line summary of the work</td>
+              <td><em>fix: fire job_found PostHog event for all saved jobs, not just strong matches</em></td>
+            </tr>
+            <tr>
+              <td><strong>Body</strong></td>
+              <td>The full description — problem, decision, fix</td>
+              <td>Explains what is broken, why it matters, and exactly what to change</td>
+            </tr>
+            <tr>
+              <td><strong>Labels</strong></td>
+              <td>Tags that categorise the issue</td>
+              <td><span class="badge badge-label">ready-for-agent</span></td>
+            </tr>
+            <tr>
+              <td><strong>Assignee</strong></td>
+              <td>Who is responsible for it</td>
+              <td>Can be a person, a team, or left blank for an agent to claim</td>
+            </tr>
+            <tr>
+              <td><strong>Number</strong></td>
+              <td>A unique ID that never changes</td>
+              <td>#19</td>
+            </tr>
+            <tr>
+              <td><strong>State</strong></td>
+              <td>Open (not done) or Closed (done)</td>
+              <td>Currently open — fix comes before Feature 17</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h2>Issue #19 — a real example</h2>
+        <p>This issue was created during a Feature 11 session. Read the actual issue now: it is at <code>github.com/gwho/job-pilot/issues/19</code>. Or look at this condensed version:</p>
+
+        <pre><code>title: fix: fire job_found PostHog event for all saved jobs,
+       not just strong matches
+
+## Problem
+
+`job_found` is currently fired only for jobs with
+`match_score >= 70` in `app/api/agent/find/route.ts`.
+
+This causes a divergence in Feature 17 analytics:
+- The "Total Jobs Found" stat card counts all jobs in the DB.
+- The "Jobs Found Over Time" chart queries PostHog for
+  `job_found` events — and therefore undercounts.
+
+## Decision
+
+`job_found` means "a job was discovered and saved",
+not "a strong match was found".
+
+## Fix (before Feature 17)
+
+In `app/api/agent/find/route.ts`, move the `job_found`
+event so it fires for every saved job, not just those
+with match_score >= MATCH_THRESHOLD.
+
+label: ready-for-agent</code></pre>
+
+        <p>Notice how specific it is. It names the exact file (<code>app/api/agent/find/route.ts</code>), the exact problem (PostHog undercounting), the exact decision (fire for all jobs), and the exact fix (move the event call). A developer — or an AI agent — could implement this without asking any follow-up questions.</p>
+
+        <h2>The label vocabulary in this project</h2>
+        <p>Labels act as a status signal. Anyone reading the issue list can see at a glance what needs what:</p>
+
+        <table class="ref">
+          <thead>
+            <tr><th>Label</th><th>Meaning</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><span class="badge badge-label">needs-triage</span></td><td>Just arrived — not yet categorised or prioritised</td></tr>
+            <tr><td><span class="badge badge-label">needs-info</span></td><td>Blocked — someone needs to answer a question before work can begin</td></tr>
+            <tr><td><span class="badge badge-label">ready-for-agent</span></td><td>Fully specified — an AI agent can pick this up and implement it without a human</td></tr>
+            <tr><td><span class="badge badge-label">ready-for-human</span></td><td>Needs human judgment — a creative or architectural decision, not a mechanical fix</td></tr>
+            <tr><td><span class="badge badge-label">wontfix</span></td><td>Deliberately not doing this — the issue stays closed for context but the work is skipped</td></tr>
+          </tbody>
+        </table>
+
+        <h2>What "the task is already done" means</h2>
+        <p>Earlier in this session you asked: "should we create a GitHub issue for Vitest, or have you already finished the task?"</p>
+        <p>The answer: the task is done. Vitest is installed, configured, and running 25 passing tests. There is nothing left to track. GitHub issues are for work that has not happened yet. Once the work is merged, you close the issue — or in this case, you just never open one because you did the work immediately.</p>
+        <p>The only open issue right now is #19 — the PostHog event fix — because that fix belongs before Feature 17, not now. It needs to be tracked so it is not forgotten across sessions.</p>
+
+        <h2>When to open an issue vs just doing the work</h2>
+
+        <div class="grid">
+          <section class="card">
+            <h3>Open an issue</h3>
+            <ul>
+              <li>The work will happen in a future session or by a different person/agent</li>
+              <li>The decision needs to be recorded for context</li>
+              <li>You want to track a deferred bug before it is forgotten</li>
+            </ul>
+          </section>
+          <section class="card">
+            <h3>Just do the work</h3>
+            <ul>
+              <li>You are implementing it right now in this session</li>
+              <li>The change is small and low-risk</li>
+              <li>No one else needs to approve or be aware of it</li>
+            </ul>
+          </section>
+        </div>
+
+        <h2>How to create an issue from the terminal</h2>
+        <p>JobPilot uses the <code>gh</code> CLI (GitHub's official command-line tool). Issue #19 was created with:</p>
+
+        <pre><code>gh issue create \
+  --repo gwho/job-pilot \
+  --title "fix: fire job_found PostHog event for all saved jobs, not just strong matches" \
+  --body "## Problem
+\`job_found\` is currently fired only for jobs with \`match_score &gt;= 70\`..." \
+  --label "ready-for-agent"</code></pre>
+
+        <p>The <code>--label</code> flag only works if that label already exists in the repository. In this session we had to create the <code>ready-for-agent</code> label first with <code>gh label create</code> before we could apply it.</p>
+
+        <!-- Quiz 1 -->
+        <div class="quiz">
+          <h2>Retrieval check 1 — label selection</h2>
+          <p>You discover that the "Generate Resume" button shows a spinner forever when the PDF fails to generate — it never resets to the normal button state. You cannot fix it right now. Which label do you apply?</p>
+          <details class="answer">
+            <summary>Reveal answer</summary>
+            <p><span class="badge badge-label">ready-for-agent</span> if the fix is clear and mechanical (e.g. "add a <code>finally</code> block that resets <code>isGenerating</code> to false"). <span class="badge badge-label">needs-info</span> if you are not sure yet whether the problem is in the API route, the Server Action, or the client component. <span class="badge badge-label">needs-triage</span> if you just discovered it and have not investigated at all.</p>
+          </details>
+        </div>
+
+        <!-- Quiz 2 -->
+        <div class="quiz">
+          <h2>Retrieval check 2 — issue quality</h2>
+          <p>Which issue title is better and why?</p>
+          <pre><code>A: "bug in job search"
+B: "fix: discovery search returns 0 results when location is empty string"</code></pre>
+          <details class="answer">
+            <summary>Reveal answer</summary>
+            <p><strong>B is far better.</strong> Title A gives no information — anyone reading the issue list cannot tell what is broken, where it is, or how to reproduce it. Title B specifies the symptom (0 results), the trigger (empty location string), and the context (discovery search). An agent reading B could start implementing a fix immediately. An agent reading A would have to investigate the entire codebase first.</p>
+          </details>
+        </div>
+
+        <!-- Quiz 3 -->
+        <div class="quiz">
+          <h2>Retrieval check 3 — open or close?</h2>
+          <p>You finish implementing the issue #19 fix — moving the <code>job_found</code> event to fire for all saved jobs. What do you do with the issue?</p>
+          <details class="answer">
+            <summary>Reveal answer</summary>
+            <p>Close it. An issue represents work that needs to happen. Once the work is done and merged, the issue is resolved. You close it — not delete it — because the history of the decision is useful to keep. Anyone can look at the closed issue later and understand why the event was moved.</p>
+          </details>
+        </div>
+
+        <h2>Practice: draft an issue</h2>
+        <p>Without creating it on GitHub yet, write the title and body for this scenario:</p>
+        <blockquote style="border-left: 3px solid var(--line); padding-left: 14px; color: var(--muted); font-style: italic;">
+          "The jobs table doesn't show a loading state while a search is running. The user clicks Find Jobs and nothing visually changes for 10–20 seconds until jobs appear."
+        </blockquote>
+        <p>Write: a precise title, the problem, the affected file or component, and the fix. Then check: would a developer (or an AI agent) be able to implement it from your description alone?</p>
+        <details class="answer">
+          <summary>Example answer</summary>
+          <pre><code>title: enhancement: show loading skeleton in JobsTable while discovery search runs
+
+## Problem
+
+When the user clicks "Find Jobs", the jobs table shows no
+feedback for 10–20 seconds while the Apify actor runs.
+`isLoading` state exists in `FindJobsClient`, but `JobsTable`
+does not receive it.
+
+## Fix
+
+Pass `isLoading` as a prop to `JobsTable`. While `isLoading`
+is true, render 5 skeleton rows instead of the empty state
+or actual jobs.
+
+Affected files:
+- `components/find-jobs/FindJobsClient.tsx` (pass prop)
+- `components/find-jobs/JobsTable.tsx` (render skeleton)
+
+label: ready-for-agent</code></pre>
+        </details>
+
+        <h2>Primary source</h2>
+        <p>Read GitHub's own guide: <a href="https://docs.github.com/en/issues/tracking-your-work-with-issues/about-issues">About Issues</a>. It is short. Focus on "the difference between issues and pull requests" — that distinction will come up soon.</p>
+
+        <div class="callout">
+          <strong>Ask your AI teacher:</strong> "Write me a GitHub Issue for a bug I just discovered — the match score bar in JobsTable shows 100% for any unscored job instead of a dash. Help me write a precise, agent-ready issue."
+        </div>
+      </article>
+    </main>
+  </body>
+</html>

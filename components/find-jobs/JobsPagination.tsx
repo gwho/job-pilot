@@ -1,13 +1,12 @@
 "use client";
 
-const PAGE_SIZE = 6;
-
 type Props = {
   page: number;
   totalPages: number;
   totalCount: number;
   startIdx: number;
   pageNumbers: (number | "...")[];
+  pageSize: number;
   onPageChange: (page: number) => void;
 };
 
@@ -17,6 +16,7 @@ export function JobsPagination({
   totalCount,
   startIdx,
   pageNumbers,
+  pageSize,
   onPageChange,
 }: Props) {
   return (
@@ -32,7 +32,7 @@ export function JobsPagination({
             </span>{" "}
             to{" "}
             <span className="font-semibold text-text-primary">
-              {Math.min(startIdx + PAGE_SIZE, totalCount)}
+              {Math.min(startIdx + pageSize, totalCount)}
             </span>{" "}
             of{" "}
             <span className="font-semibold text-text-primary">

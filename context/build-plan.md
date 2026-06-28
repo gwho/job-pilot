@@ -238,18 +238,58 @@ credential storage, fuzzy dedupe.
 
 ### 11 Filter + Sort + Pagination
 
-Wire filter tabs, sort dropdown, text search, and pagination to real InsForge DB data.
+All filter, sort, and pagination logic stays client-side via `useMemo` in `FindJobsClient`. Saved job history loads once on page mount; every refinement slices that in-memory list. No DB query per interaction.
 
-**Logic:**
+**State — URL query string (`q`, `match`, `sort`, `page`):**
+- All filter/sort/page state lives in the URL — survives refresh, back/forward works
+- All changes use `router.replace()` — these are refinements of the same view, not navigation
+- `q` debounces 300ms before updating the URL; local input state updates instantly to avoid typing jank
+- `jobTitle` and `location` (agent inputs) stay in `useState` — not in URL, refreshing does not re-trigger the agent
 
-- All Matches tab — all jobs for current user
-- High Match filter — jobs with match_score >= 70
-- Low Match filter — jobs with match_score < 70
-- Sort by Match Score — order by match_score descending
-- Sort by Newest — order by found_at descending
-- Sort by Oldest — order by found_at ascending
-- Text search — filter by company name or job title (case insensitive)
-- Pagination — 20 jobs per page, total count shown
+**After a search run completes:**
+- New jobs (from `data.jobs`) merge into saved job history by deduplicating on `id` — no jobs lost from view
+- `page` resets to 1; `q`, `match`, `sort` are preserved
+
+**Filter logic:**
+- All Matches — entire saved job history for current user
+- High Match — `match_score >= MATCH_THRESHOLD` (unscored jobs excluded)
+- Low Match — `match_score < MATCH_THRESHOLD` (unscored jobs excluded)
+- Unscored jobs (`match_score IS NULL`) only appear under All Matches — see CONTEXT.md for canonical definition
+- Text search (`q`) filters by company name or job title, case-insensitive
+
+**Sort:**
+- Match Score — `match_score` descending
+- Newest — `found_at` descending
+- Oldest — `found_at` ascending
+
+**Pagination:**
+- 20 jobs per page
+- Windowed page numbers: first page, last page, current page ± 1 neighbour, ellipsis fills gaps
+- `page` beyond `totalPages` clamps silently to last valid page — avoids empty state when filters reduce results
+
+**Invalid URL params:** silent coerce to defaults at read site — no redirect, no error.
+
+**Display changes:**
+- SOURCE column replaced by PROVIDER column showing `source_provider` ("JobsDB" / "Adzuna") — null shows "—"
+- Null `match_score` renders "—" in the score cell, not "0%"
+
+**Empty states (two distinct cases):**
+- No saved job history at all → prompt to run first search above
+- Filters excluded all results → "No jobs match your filters."
+
+**Not in scope:**
+- Row click navigation → Feature 12
+- Unscored jobs filter tab → deferred
+- DB-side pagination → deferred (client-side is sufficient at current dataset scale)
+
+**Technical note:** `useSearchParams()` requires a Suspense boundary in Next.js App Router. `FindJobsClient` must be wrapped in `<Suspense>` in `app/find-jobs/page.tsx`.
+
+**Files changed:**
+- `components/find-jobs/FindJobsClient.tsx` — URL state via `useSearchParams()`, merge-dedup logic, Suspense wrapper
+- `components/find-jobs/JobFilters.tsx` — read/write URL params, debounced `q`
+- `components/find-jobs/JobsTable.tsx` — Provider column (replaces Source), null score display
+- `components/find-jobs/JobsPagination.tsx` — windowed page numbers, `PAGE_SIZE = 20`
+- `app/find-jobs/page.tsx` — Suspense boundary around `FindJobsClient`
 
 ---
 

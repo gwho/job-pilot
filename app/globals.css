@@ -70,6 +70,12 @@
   --color-overlay: #111827;
   --color-overlay-dark: #131316;
 
+  /* On-accent — for text and elements placed on the gradient accent surface (BottomCTA) */
+  --color-on-accent: #ffffff;
+  --color-on-accent-muted: rgb(255 255 255 / 0.7);
+  --color-on-accent-border: rgb(255 255 255 / 0.3);
+  --color-on-accent-subtle: rgb(255 255 255 / 0.1);
+
   /* Border radius */
   --radius-sm: 4px;
   --radius-md: 8px;

@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Lesson 0002 — TDD for Beginners</title>
+    <link rel="stylesheet" href="../assets/course.css" />
+  </head>
+  <body>
+    <main>
+      <article>
+        <nav class="lesson-nav no-print">
+          <a href="0001-url-view-state-in-jobpilot.html">← Previous: URL View State</a>
+          <a href="0003-github-issues.html">→ Next: GitHub Issues</a>
+          <a href="../__tests__/find-jobs/utils.test.ts">Real Test File</a>
+          <a href="../lib/find-jobs-utils.ts">Real Utils File</a>
+        </nav>
+
+        <p class="kicker">Lesson 0002</p>
+        <h1>TDD for Beginners</h1>
+        <p class="muted">Using the real tests in <a href="../__tests__/find-jobs/utils.test.ts">__tests__/find-jobs/utils.test.ts</a> as your guide.</p>
+
+        <div class="callout">
+          <strong>One tangible win:</strong> after this lesson you will be able to read any test in this codebase and understand exactly what it is checking and why.
+        </div>
+
+        <h2>What is a test, in plain English?</h2>
+        <p>A test is a question with a known answer. You ask the question by calling a function, and you check the answer using a special word called <code>expect</code>.</p>
+        <p>That is the whole idea. Everything else is just details.</p>
+
+        <h2>The anatomy of one test</h2>
+        <p>Open <a href="../__tests__/find-jobs/utils.test.ts">utils.test.ts</a>. Look at lines 21–23:</p>
+
+        <pre><code>it("returns 'all' for null", () =&gt; {
+  expect(parseMatch(null)).toBe("all");
+});</code></pre>
+
+        <p>There are three parts. Read them right to left — it helps:</p>
+
+        <table class="ref">
+          <thead>
+            <tr><th>Part</th><th>What it does</th><th>Plain English</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>it("returns 'all' for null", ...)</code></td>
+              <td>Names the test</td>
+              <td>"The thing I am checking is: it returns 'all' for null"</td>
+            </tr>
+            <tr>
+              <td><code>parseMatch(null)</code></td>
+              <td>Calls the function</td>
+              <td>"Ask the function: what do you give back when I pass null?"</td>
+            </tr>
+            <tr>
+              <td><code>expect(...).toBe("all")</code></td>
+              <td>Checks the answer</td>
+              <td>"I expect the answer to be exactly the string 'all'"</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <p>If the function gives back "all", the test passes. If it gives back anything else — "high", "", undefined — the test fails and Vitest prints a clear error message telling you exactly what went wrong.</p>
+
+        <h2>What is <code>describe</code>?</h2>
+        <p>It is just a label. It groups related tests together so the output is easier to read. Look at lines 14–30:</p>
+
+        <pre><code>describe("parseMatch", () =&gt; {         // ← group label
+  it("returns valid match values unchanged", () =&gt; { ... });
+  it("returns 'all' for null", () =&gt; { ... });
+  it("returns 'all' for invalid strings", () =&gt; { ... });
+});</code></pre>
+
+        <p>Three tests about <code>parseMatch</code> live inside one <code>describe("parseMatch", ...)</code> block. When you run <code>npm run test:run</code>, the output groups them under that label so you can find failures quickly.</p>
+
+        <h2>What is TDD?</h2>
+        <p>TDD stands for Test-Driven Development. It has one rule: <strong>write the test before you write the code.</strong></p>
+        <p>The reason is not what most people think. The reason is not "to catch bugs." The reason is to force you to decide, precisely, what a function should do — before you start worrying about how to make it work.</p>
+        <p>The cycle has three steps:</p>
+
+        <ol class="steps">
+          <li>
+            <div>
+              <strong><span class="badge badge-fail">Red</span> — Write a failing test.</strong>
+              <p style="margin:6px 0 0">Write a test for the function you are about to build. Run it. It fails because the function does not exist yet. That red failure is expected and correct.</p>
+            </div>
+          </li>
+          <li>
+            <div>
+              <strong><span class="badge badge-pass">Green</span> — Write the minimum code to make it pass.</strong>
+              <p style="margin:6px 0 0">Write just enough code to make that one test pass. Not more. Do not add features the test does not ask for.</p>
+            </div>
+          </li>
+          <li>
+            <div>
+              <strong>Refactor — Clean up.</strong>
+              <p style="margin:6px 0 0">If the code is messy, clean it up now. The test is your safety net — if you break something while cleaning, the test turns red again immediately.</p>
+            </div>
+          </li>
+        </ol>
+
+        <p>Then repeat. One test at a time.</p>
+
+        <h2>A real TDD example from Feature 11</h2>
+        <p>Here is exactly how <code>parseMatch</code> would have been built using TDD. Open <a href="../lib/find-jobs-utils.ts">lib/find-jobs-utils.ts</a> alongside this so you can see the finished version.</p>
+
+        <h3>Step 1 — Write a failing test</h3>
+        <p>Before writing any code for <code>parseMatch</code>, the test file would already exist with this:</p>
+        <pre><code>it("returns 'all' for null", () =&gt; {
+  expect(parseMatch(null)).toBe("all");
+});</code></pre>
+        <p>Running <code>npm run test:run</code> would print: <strong>parseMatch is not a function</strong>. <span class="badge badge-fail">Red</span></p>
+
+        <h3>Step 2 — Write the minimum code to pass</h3>
+        <pre><code>export function parseMatch(raw: string | null): MatchFilter {
+  return "all";
+}</code></pre>
+        <p>This passes the null test. <span class="badge badge-pass">Green</span></p>
+        <p>But now the test "returns valid match values unchanged" fails because <code>parseMatch("high")</code> returns "all" instead of "high". Good. That failure tells you exactly what to add next.</p>
+
+        <h3>Step 3 — Make all tests pass</h3>
+        <pre><code>export function parseMatch(raw: string | null): MatchFilter {
+  return (["all", "high", "low"] as const).includes(raw as MatchFilter)
+    ? (raw as MatchFilter)
+    : "all";
+}</code></pre>
+        <p>All three tests pass. <span class="badge badge-pass">Green</span></p>
+
+        <h2>Why tests were especially important for <code>mergeJobsById</code></h2>
+        <p>Look at lines 144–189 of the test file. The <code>mergeJobsById</code> function is the most important function in Feature 11 — it prevents data loss when two searches run. The test at line 154 checks the exact failure mode that existed before Feature 11:</p>
+
+        <pre><code>it("overwrites existing jobs with incoming data on id collision", () =&gt; {
+  const current = [{ id: "a", title: "Old A" }];
+  const incoming = [{ id: "a", title: "New A" }];
+  const result = mergeJobsById(current, incoming);
+  expect(result).toHaveLength(1);      // only one job — deduplication worked
+  expect(result[0].title).toBe("New A"); // newer data wins
+});</code></pre>
+
+        <p>Before this function was extracted, the old code did <code>setJobs(data.jobs)</code> — it replaced <em>all</em> existing jobs with only the latest search results. Running this test against the old code would have produced a red failure. The test would have caught the bug immediately.</p>
+
+        <h2>How to run the tests in this project</h2>
+        <pre><code>npm run test:run   # run once, see all results
+npm run test       # watch mode — re-runs every time you save a file</code></pre>
+
+        <p>The output for a passing run looks like:</p>
+        <pre><code> ✓ __tests__/find-jobs/utils.test.ts (25 tests) 5ms
+
+ Test Files  1 passed (1)
+      Tests  25 passed (25)</code></pre>
+
+        <!-- Quiz 1 -->
+        <div class="quiz">
+          <h2>Retrieval check 1 — read a test</h2>
+          <p>Look at this test from lines 56–59 of utils.test.ts. Without running it, what must <code>parsePage("1")</code> return for this test to pass?</p>
+          <pre><code>it("parses valid positive integers", () =&gt; {
+  expect(parsePage("1")).toBe(1);
+});</code></pre>
+          <details class="answer">
+            <summary>Reveal answer</summary>
+            <p>The number <code>1</code> (an integer, not the string <code>"1"</code>). The test uses <code>.toBe(1)</code> which checks value and type. If <code>parsePage</code> returned the string <code>"1"</code> instead of the number <code>1</code>, the test would fail.</p>
+          </details>
+        </div>
+
+        <!-- Quiz 2 -->
+        <div class="quiz">
+          <h2>Retrieval check 2 — name the TDD steps</h2>
+          <p>You are about to add a <code>parseProvider</code> function that accepts <code>"jobsdb"</code>, <code>"adzuna"</code>, or <code>null</code> and defaults to <code>"all"</code>. What are the three TDD steps in order?</p>
+          <details class="answer">
+            <summary>Reveal answer</summary>
+            <ol>
+              <li><strong>Red</strong> — Write tests for <code>parseProvider</code> (for null, for valid values, for invalid strings). Run them. They fail because the function does not exist.</li>
+              <li><strong>Green</strong> — Write <code>parseProvider</code> in <code>lib/find-jobs-utils.ts</code>. Run the tests. They pass.</li>
+              <li><strong>Refactor</strong> — Notice that <code>parseProvider</code> looks almost identical to <code>parseMatch</code>. Could you extract a generic <code>parseEnum</code> helper? Clean it up now while the tests protect you.</li>
+            </ol>
+          </details>
+        </div>
+
+        <!-- Quiz 3 -->
+        <div class="quiz">
+          <h2>Retrieval check 3 — predict a failure</h2>
+          <p>Someone changes <code>mergeJobsById</code> to use the old approach: instead of a <code>Map</code>, it just does <code>return [...current, ...incoming]</code>. Which specific test in utils.test.ts turns red first?</p>
+          <details class="answer">
+            <summary>Reveal answer</summary>
+            <p>The test "overwrites existing jobs with incoming data on id collision" (line 154). That test checks <code>result.toHaveLength(1)</code> — but the broken version would return length 2 (both "Old A" and "New A" in the array, without deduplication). The red failure is precise: the test tells you exactly what contract was broken.</p>
+          </details>
+        </div>
+
+        <h2>Primary source</h2>
+        <p>Read <a href="https://vitest.dev/guide/">the Vitest Getting Started guide</a> — specifically the "Writing Tests" section. Focus on <code>describe</code>, <code>it</code>, and <code>expect</code>. Everything else can wait.</p>
+
+        <div class="callout">
+          <strong>Ask your AI teacher:</strong> "Write me a failing test for a function called <code>parseProvider</code> that accepts 'jobsdb', 'adzuna', or null — and make me write the function to make it pass."
+        </div>
+      </article>
+    </main>
+  </body>
+</html>

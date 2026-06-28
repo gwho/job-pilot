@@ -1,15 +1,24 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
+import { useSearchParams, useRouter, usePathname } from "next/navigation";
 
 import { MATCH_THRESHOLD } from "@/lib/utils";
+import {
+  parseMatch,
+  parseSort,
+  parsePage,
+  parseQ,
+  buildPageNumbers,
+  mergeJobsById,
+} from "@/lib/find-jobs-utils";
 import { SearchControls } from "./SearchControls";
 import { JobFilters, type MatchFilter, type Sort } from "./JobFilters";
 import { JobsTable } from "./JobsTable";
 import { JobsPagination } from "./JobsPagination";
 import type { Job } from "@/types/index";
 
-const PAGE_SIZE = 6;
+const PAGE_SIZE = 20;
 
 type SearchStatus = {
   jobsFound: number;
@@ -21,18 +30,62 @@ type Props = {
 };
 
 export function FindJobsClient({ initialJobs }: Props) {
-  // Search state — owned here so a search can update the table without a reload.
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+
+  // View state — derived from URL on every render (single source of truth)
+  const match = parseMatch(searchParams.get("match"));
+  const sort = parseSort(searchParams.get("sort"));
+  const page = parsePage(searchParams.get("page"));
+  const q = parseQ(searchParams.get("q"));
+
+  // Agent inputs — not URL state; refreshing must not re-trigger the actor
   const [jobs, setJobs] = useState<Job[]>(initialJobs);
   const [jobTitle, setJobTitle] = useState("");
   const [location, setLocation] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [searchStatus, setSearchStatus] = useState<SearchStatus | null>(null);
 
-  // View state — filter / sort / pagination over the current jobs.
-  const [filterText, setFilterText] = useState("");
-  const [matchFilter, setMatchFilter] = useState<MatchFilter>("all");
-  const [sort, setSort] = useState<Sort>("score");
-  const [page, setPage] = useState(1);
+  // Display state — local draft for the text input only
+  const [filterTextDraft, setFilterTextDraft] = useState(q);
+
+  // Sync draft when URL q changes externally (back/forward navigation).
+  // Calling setState in an effect is intentional here: we are syncing an
+  // external system (the URL) to local display state. The debounce effect's
+  // guard (filterTextDraft === q) prevents a URL replace loop.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setFilterTextDraft(q);
+  }, [q]);
+
+  // Debounce draft → URL; guard prevents replace loop after back-nav sync
+  useEffect(() => {
+    if (filterTextDraft === q) return;
+    const timeout = window.setTimeout(() => {
+      replaceViewState({ q: filterTextDraft, page: 1 });
+    }, 300);
+    return () => window.clearTimeout(timeout);
+    // replaceViewState is stable (defined below in render scope) — intentionally omitted
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterTextDraft]);
+
+  function replaceViewState(updates: {
+    q?: string;
+    match?: MatchFilter;
+    sort?: Sort;
+    page?: number;
+  }) {
+    const params = new URLSearchParams(searchParams.toString());
+    if ("q" in updates) {
+      if (updates.q) params.set("q", updates.q);
+      else params.delete("q");
+    }
+    if ("match" in updates) params.set("match", updates.match!);
+    if ("sort" in updates) params.set("sort", updates.sort!);
+    if ("page" in updates) params.set("page", String(updates.page));
+    router.replace(`${pathname}?${params.toString()}`);
+  }
 
   async function handleSearch() {
     setIsLoading(true);
@@ -49,12 +102,16 @@ export function FindJobsClient({ initialJobs }: Props) {
         return;
       }
 
-      setJobs(data.jobs as Job[]);
+      // Merge by id — functional form avoids stale closure if searches overlap
+      setJobs((currentJobs) => mergeJobsById(currentJobs, data.jobs as Job[]));
+
       setSearchStatus({
         jobsFound: data.jobsFound,
         strongMatches: data.strongMatches,
       });
-      setPage(1);
+
+      // Reset to page 1 — preserve q, match, sort
+      replaceViewState({ page: 1 });
     } catch (error) {
       console.error("[FindJobsClient] search error:", error);
     } finally {
@@ -65,23 +122,27 @@ export function FindJobsClient({ initialJobs }: Props) {
   const filtered = useMemo(() => {
     let result = [...jobs];
 
-    if (matchFilter === "high") {
-      result = result.filter((j) => (j.match_score ?? 0) >= MATCH_THRESHOLD);
-    } else if (matchFilter === "low") {
-      result = result.filter((j) => (j.match_score ?? 0) < MATCH_THRESHOLD);
+    if (match === "high") {
+      result = result.filter(
+        (j) => j.match_score != null && j.match_score >= MATCH_THRESHOLD,
+      );
+    } else if (match === "low") {
+      result = result.filter(
+        (j) => j.match_score != null && j.match_score < MATCH_THRESHOLD,
+      );
     }
 
-    if (filterText.trim()) {
-      const q = filterText.toLowerCase();
+    if (q.trim()) {
+      const lower = q.toLowerCase();
       result = result.filter(
         (j) =>
-          j.company?.toLowerCase().includes(q) ||
-          j.title?.toLowerCase().includes(q),
+          j.company?.toLowerCase().includes(lower) ||
+          j.title?.toLowerCase().includes(lower),
       );
     }
 
     if (sort === "score") {
-      result.sort((a, b) => (b.match_score ?? 0) - (a.match_score ?? 0));
+      result.sort((a, b) => (b.match_score ?? -1) - (a.match_score ?? -1));
     } else if (sort === "newest") {
       result.sort(
         (a, b) =>
@@ -95,7 +156,7 @@ export function FindJobsClient({ initialJobs }: Props) {
     }
 
     return result;
-  }, [jobs, matchFilter, filterText, sort]);
+  }, [jobs, match, q, sort]);
 
   const totalCount = filtered.length;
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
@@ -103,27 +164,10 @@ export function FindJobsClient({ initialJobs }: Props) {
   const startIdx = (safePage - 1) * PAGE_SIZE;
   const pageItems = filtered.slice(startIdx, startIdx + PAGE_SIZE);
 
-  const pageNumbers = useMemo((): (number | "...")[] => {
-    if (totalPages <= 5) {
-      return Array.from({ length: totalPages }, (_, i) => i + 1);
-    }
-    return [1, 2, 3, "...", totalPages];
-  }, [totalPages]);
-
-  function handleFilterTextChange(value: string) {
-    setFilterText(value);
-    setPage(1);
-  }
-
-  function handleMatchFilterChange(value: MatchFilter) {
-    setMatchFilter(value);
-    setPage(1);
-  }
-
-  function handleSortChange(value: Sort) {
-    setSort(value);
-    setPage(1);
-  }
+  const pageNumbers = useMemo(
+    () => buildPageNumbers(totalPages, safePage),
+    [totalPages, safePage],
+  );
 
   return (
     <div className="space-y-6">
@@ -139,21 +183,24 @@ export function FindJobsClient({ initialJobs }: Props) {
 
       <div className="bg-surface border border-border rounded-2xl shadow-sm">
         <JobFilters
-          filterText={filterText}
-          matchFilter={matchFilter}
+          filterText={filterTextDraft}
+          matchFilter={match}
           sort={sort}
-          onFilterTextChange={handleFilterTextChange}
-          onMatchFilterChange={handleMatchFilterChange}
-          onSortChange={handleSortChange}
+          onFilterTextChange={setFilterTextDraft}
+          onMatchFilterChange={(next) =>
+            replaceViewState({ match: next, page: 1 })
+          }
+          onSortChange={(next) => replaceViewState({ sort: next, page: 1 })}
         />
-        <JobsTable jobs={pageItems} />
+        <JobsTable jobs={pageItems} hasNoHistory={jobs.length === 0} />
         <JobsPagination
           page={safePage}
           totalPages={totalPages}
           totalCount={totalCount}
           startIdx={startIdx}
           pageNumbers={pageNumbers}
-          onPageChange={setPage}
+          pageSize={PAGE_SIZE}
+          onPageChange={(p) => replaceViewState({ page: p })}
         />
       </div>
     </div>

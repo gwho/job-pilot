@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { redirect } from "next/navigation";
 
 import { Navbar } from "@/components/layout/Navbar";
@@ -28,7 +29,9 @@ export default async function FindJobsPage() {
       <Navbar />
       <main className="min-h-[calc(100vh-4rem)] bg-background">
         <div className="max-w-[1440px] mx-auto px-6 py-8">
-          <FindJobsClient initialJobs={(jobs as Job[]) ?? []} />
+          <Suspense fallback={null}>
+            <FindJobsClient initialJobs={(jobs as Job[]) ?? []} />
+          </Suspense>
         </div>
       </main>
     </>

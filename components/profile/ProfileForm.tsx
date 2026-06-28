@@ -665,7 +665,7 @@ export function ProfileForm({ profile, email }: Props) {
               type="button"
               onClick={handleExtract}
               disabled={isExtracting}
-              className="bg-accent text-white text-sm font-medium rounded-md px-4 py-2 hover:bg-accent-dark transition-colors disabled:opacity-60"
+              className="bg-accent text-accent-foreground text-sm font-medium rounded-md px-4 py-2 hover:bg-accent-dark transition-colors disabled:opacity-60"
             >
               {isExtracting ? "Extracting..." : "Extract from Resume"}
             </button>
