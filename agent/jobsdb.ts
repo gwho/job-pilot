@@ -16,8 +16,9 @@ export async function discoverJobsDbJobs(
   query: string,
   location: string,
   maxItems = 10,
+  maxPages = 1,
 ): Promise<JobsDbJob[]> {
-  const items = await runJobsDbActor({ query, location, maxItems });
+  const items = await runJobsDbActor({ query, location, maxItems, maxPages });
 
   return items.map((item) => ({
     title: item.title ?? "",

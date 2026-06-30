@@ -1,10 +1,10 @@
 "use client";
 
-import { Search, MapPin, Sparkles, Loader2 } from "lucide-react";
+import { Search, MapPin, Sparkles, AlertCircle, Loader2 } from "lucide-react";
 
 type SearchStatus = {
-  jobsFound: number;
-  strongMatches: number;
+  message: string;
+  isError?: boolean;
 };
 
 type Props = {
@@ -87,9 +87,15 @@ export function SearchControls({
       </div>
 
       {searchStatus && (
-        <div className="mt-4 flex items-center gap-2 bg-success-lightest text-success-foreground text-sm rounded-md px-4 py-2">
-          <Sparkles size={14} />
-          Found {searchStatus.jobsFound} jobs and saved {searchStatus.strongMatches} strong matches.
+        <div
+          className={`mt-4 flex items-center gap-2 text-sm rounded-md px-4 py-2 ${
+            searchStatus.isError
+              ? "bg-error/10 text-error"
+              : "bg-success-lightest text-success-foreground"
+          }`}
+        >
+          {searchStatus.isError ? <AlertCircle size={14} /> : <Sparkles size={14} />}
+          {searchStatus.message}
         </div>
       )}
     </div>

@@ -8,6 +8,7 @@ export type JobsDbActorInput = {
   query: string;
   location: string;
   maxItems: number;
+  maxPages: number;
 };
 
 export type JobsDbActorOutput = {

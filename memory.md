@@ -1,73 +1,78 @@
-# Memory — Feature 10b Complete: JobsDB HK Discovery via Apify
+# Memory — Debugging Session: Actor URL Fix + Silent Error Path Fix + Teaching Start
 
-Last updated: 2026-06-28
+Last updated: 2026-06-30
 
 ## What was built
 
-### Feature 10b — JobsDB HK Job Discovery (fully complete, end-to-end working)
+### Actor: SEO path URL format (build 0.1.7)
 
-**Actor:**
-- `apify/jobsdb-hk-actor/src/main.ts` — Crawlee PlaywrightCrawler actor. Fixed this session: search URL changed from `/hk/search-jobs/{q}/{l}` (404) to `/jobs?q={q}&l={l}`; card selector changed from `[data-automation="jobListing"]` (0 hits) to `[data-testid="job-card"]` (30 hits); added `canonicalJobUrl()` to strip tracking params; cookie injection via `preNavigationHooks`.
-- `apify/jobsdb-hk-actor/Dockerfile` — `COPY package.json ./` only (not lock file) to avoid EACCES on Apify's `myuser` build user.
-- Current build: **0.1.4** (actor ID: `XzcBowQgpzN8TVhse`)
+- `apify/jobsdb-hk-actor/src/urls.ts` — NEW file extracted from `main.ts`:
+  - `toPathSlug(text)` — converts "sales coordinator" → "sales-coordinator", `&` → "and"
+  - `jobsDbSearchUrl(query, location, page)` — builds SEO path: `https://hk.jobsdb.com/sales-coordinator-jobs/in-Hong-Kong`
+  - `canonicalJobUrl(rawUrl)` — strips query string + hash; returns `${origin}${pathname}` only
+- `__tests__/find-jobs/jobsdb-urls.test.ts` — NEW: 4 tests covering SEO URL building (with/without location), pagination param, canonicalisation
 
-**Session capture:**
-- `scripts/capture-jobsdb-session.mjs` — fixed this session: now uses `channel: 'chrome'` (real Chrome binary) + `--disable-blink-features=AutomationControlled` + `addInitScript` to mask `navigator.webdriver`. This bypasses Cloudflare CAPTCHA that Playwright's bundled Chromium triggers.
-- Session KV store: `8yzXh5w1IZdLjvZv9` — key `JOBSDB_SESSION` — **104 cookies** (captured and uploaded this session)
-- `scripts/jobsdb_session.json` — gitignored, never committed
+Root cause: `?q=sales+coordinator&l=Hong+Kong` URL form returns generic/irrelevant listings. SEO path form returns exact keyword matches. Build 0.1.7 deployed, 9/10 results verified as exact keyword matches.
 
-**App code:**
-- `lib/apify.ts` — `runJobsDbActor()` using `apify-client`. Fixed: `timeoutSecs` → `timeout` (excess property check error during build)
-- `agent/jobsdb.ts` — normalize actor output + `toScoringInput`
-- `agent/job-matcher.ts` — `ScoringInput` type replacing `AdzunaJob`
-- `app/api/agent/find/route.ts` — swapped to JobsDB adapter, `maxDuration = 300`, URL dedupe via `Set<string>`, `source_provider = 'jobsdb_hk'`
-- `components/find-jobs/SearchControls.tsx` — label updated to "Job title or keywords"
-- `types/index.ts` — `JobProvider` union, `source_provider` on `Job`
-- `lib/utils.ts` — `MATCH_THRESHOLD = 70` (unchanged, imported by route)
+### Find Jobs: silent error path fix
 
-**Docs written this session:**
-- `docs/plan/10b-jobsdb-hk-discovery/plan.md`, `explanation.md`, `ai-discussion-topics.md`
-- `docs/architect/10b-jobsdb-hk-discovery/decisions.md`, `discussion.md`, `ai-discussion-topics.md`
-- `docs/tutorials/18-jobsdb-hk-discovery-architect-deep-dive/README.md` — Tutorial 18
-- `docs/deploy/10b-jobsdb-hk-actor-deploy/record.md`, `explanation.md`, `ai-discussion-topics.md`
-- `docs/debug/01-actor-selectors-and-captcha/record.md`, `explanation.md`, `ai-discussion-topics.md`
-- `docs/tutorials/19-actor-debugging-selectors-captcha/README.md` — Tutorial 19
+- `components/find-jobs/FindJobsClient.tsx`:
+  - `SearchStatus` type gains `isError?: boolean`
+  - Error path (`!res.ok || !data.success`) now calls `setSearchStatus({ message: ..., isError: true })` instead of silently returning
+- `components/find-jobs/SearchControls.tsx`:
+  - Banner conditionally applies `bg-error/10 text-error` (error) vs `bg-success-lightest text-success-foreground` (success)
+  - `AlertCircle` icon for errors, `Sparkles` icon for success
+
+### Testing: seam.test.tsx 7 → 10 tests
+
+- `__tests__/find-jobs/seam.test.tsx` — 3 new tests:
+  - Consecutive search (keyword B replaces keyword A) — GREEN before fix; confirmed state updates correctly
+  - Error path shows banner — RED before fix, GREEN after
+  - Loading state clears after error — GREEN before fix; confirmed `finally` block already correct
+
+### Session docs + tutorials
+
+- `docs/debug/02-find-jobs-pipeline-bugs/` — completed: diagnosis.md, explanation.md, ai-discussion-topics.md
+- `docs/diagnosing-bugs/find-jobs-silent-error/` — feedback-loop.md, reasoning.md, ai-discussion-topics.md (20 questions)
+- `docs/fixes/find-jobs-error-feedback/` — plan.md, explanation.md, ai-discussion-topics.md (18 questions)
+- `docs/tutorials/21-find-jobs-error-feedback/README.md` — 7-part tutorial, 5 CS concepts, end-to-end trace, 3 challenges
+
+### Teaching workspace
+
+- `NOTES.md` — updated: teaching now covers full lifecycle (features, debugging, testing, fixing)
+- `learning-records/0004-debugging-with-feedback-loops.md` — key insight: debugging as scientific method, red-capable test before hypothesis
+- `lessons/0005-debugging-with-feedback-loops.html` — 4-part lesson: silent failure, feedback loop, GREEN test as hypothesis eliminator, minimal fix
 
 ## Decisions made
 
-- **Session capture uses real Chrome (`channel: 'chrome'`), not Playwright Chromium.** Playwright's Chromium fails CAPTCHA fingerprinting (empty plugin list, generic WebGL renderer, `navigator.webdriver = true`). Real Chrome passes all signals. The Apify actor itself uses Playwright's Chromium (no real Chrome on Apify) but it never visits login pages — only authenticated scraping pages — so CAPTCHA is not triggered during actor runs.
-- **Named Apify KV store for session (`8yzXh5w1IZdLjvZv9`)** — not the actor's default per-run store (which doesn't exist until first run). Store accessed via `APIFY_SESSION_STORE_ID` env var on the actor, set via Apify REST API.
-- **Canonical job URLs** — tracking params (`?ref=...#sol=...`) stripped in `canonicalJobUrl()` before storing as `source_url`. Required for correct `Set<string>` deduplication across multiple search runs.
-- **`source` vs `source_provider` are orthogonal columns** — `source = 'search'` (how job entered), `source_provider = 'jobsdb_hk'` (which provider). Adzuna rows backfilled to `source_provider = 'adzuna'`. Never collapse these.
-- **Detail page selectors survived the JobsDB redesign; search card selector did not.** `[data-automation="job-detail-title"]` etc. still correct. Search cards migrated to `data-testid` convention.
+- **SEO path URL is the correct form** — `?q=...` returns generic listings; `/keyword-jobs/in-Location` returns relevant results. `urls.ts` owns this conversion and must be kept in sync with any URL format changes JobsDB makes.
+- **`isError?: boolean` optional on `SearchStatus`** — not required, so success-path callers don't change. `undefined` is falsy → success banner. Fewer call sites to touch, no risk of breaking existing paths.
+- **`finally` for `setIsLoading(false)` is correct RAII** — loading state is always released on every exit (return, throw, normal). Do not move it into individual branches.
+- **Minimal change principle for bug fixes** — banner mechanism already existed; the error path just wasn't using it. No new components, no new state slots.
 
 ## Problems solved
 
-- **CAPTCHA during session capture** — switched from Playwright Chromium to real Chrome via `channel: 'chrome'`. Also added `--disable-blink-features=AutomationControlled` and `navigator.webdriver` mask.
-- **Actor returning SUCCEEDED with 0 jobs** — two root causes: (1) search URL was a 404 (stale pre-Seek format), (2) card selector `[data-automation="jobListing"]` had 0 matches on current DOM. Fixed both.
-- **TypeScript build failure in `lib/apify.ts`** — `timeoutSecs` is an `ActorRun` response field, not an `ActorCallOptions` input field. Fixed to `timeout: 270`.
-- **KV store upload before first actor run** — actor's default store doesn't exist until first run. Created a persistent named store via REST API (`POST /v2/key-value-stores`) and upload directly by ID.
-- **Docker build EACCES** — `COPY package*.json ./` copied lock file owned by root; Apify builds as `myuser` who can't write it. Fixed to `COPY package.json ./` only.
-- **Session false-positive detection** — original capture script triggered on Google OAuth page. Fixed by requiring URL to be on `hk.jobsdb.com` AND not on any auth provider domain.
+- **Actor returning irrelevant jobs** — root cause was URL format, not query content. `?q=` form is a generic job board search. SEO path is a curated category page. Fixed by `jobsDbSearchUrl()` in `urls.ts`.
+- **User saw old results after search** — root cause was silent failure: `handleSearch` returned early on API error without calling `setSearchStatus`, so no banner appeared and the table was unchanged. Indistinguishable from "search found no new results" without a test.
+- **Duplicate jobs from actor** — fixed in prior session (build 0.1.6 / `seenUrls` dedup). Still in place.
 
 ## Current state
 
-- **Feature 10b is fully complete and working end-to-end.**
-- Actor build 0.1.4 live on Apify. Test run confirmed: 5 real jobs returned with title, company, location, description.
-- Session (104 cookies) uploaded to KV store `8yzXh5w1IZdLjvZv9`.
-- `npm run build` is clean. No TypeScript errors.
-- `npm run lint` is clean.
-- All tutorials through Tutorial 19 are written.
-- `context/progress-tracker.md` should be checked for next feature number.
+- Actor build `0.1.7` deployed, GREEN
+- All **37 Vitest tests** passing (`npm run test:run`)
+- Build clean (`npm run build`)
+- Feature 12 (Job Details Page) is next
+- Teaching workspace: 5 lessons complete (0001–0005), covers URL state, TDD, GitHub issues, Feature 11, debugging methodology
 
 ## Next session starts with
 
-1. Check `context/progress-tracker.md` and `context/build-plan.md` for the next feature (likely Feature 11 — Company Research or Dashboard).
-2. Run `npm run dev` and test `/find-jobs` end-to-end to confirm the full flow works in the running app (actor → jobs table populated with real JobsDB data).
-3. When session expires (14–30 days from 2026-06-28): run `node scripts/capture-jobsdb-session.mjs` to re-capture. Chrome opens, log in to JobsDB, script uploads automatically.
+Run `/remember restore`, then begin Feature 12 — Job Details Page. Start with `/architect feature 12` before writing any code.
 
 ## Open questions
 
-- Session expiry: the captured session will expire around mid-July 2026. The re-capture script is ready (`node scripts/capture-jobsdb-session.mjs`).
-- The route currently scores all returned jobs via Nemotron. If the actor returns 10 jobs and all score below `MATCH_THRESHOLD = 70`, the route saves them but fires no `job_found` PostHog events. Is that the intended behaviour for low-match results?
-- `APIFY_SESSION_STORE_ID` is in `.env.local` but the Next.js app itself never reads it — only the capture script does. Could be removed from `.env.local` once the workflow is established (the actor reads it from its own Apify env vars).
+- **`catch` path still silent** — `handleSearch`'s `catch` block only calls `console.error` on network errors (fetch throws). Needs `setSearchStatus({ message: "Network error...", isError: true })` + test with `mockRejectedValueOnce`. Intentionally deferred.
+- **GitHub Issue #19** — `job_found` PostHog event fires only for `match_score >= 70`. Fix in `app/api/agent/find/route.ts` — deferred until before Feature 17.
+- **JobsDB session expiry** — re-capture needed ~mid-July 2026. Run `node scripts/capture-jobsdb-session.mjs`.
+- **DB-level race condition** — two concurrent `/api/agent/find` requests from same user could both insert the same jobs before either sees `existingUrls`. Needs DB unique constraint to fix properly. Low-frequency; deferred.
+- **"New this search" row tagging** — showing which rows came from the current `run_id` would clarify history vs current-search split. Deferred.
+- **`APIFY_SESSION_STORE_ID` in `.env.local`** — only used by the capture script, not the Next.js app. Could be removed once workflow is stable.

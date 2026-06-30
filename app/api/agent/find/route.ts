@@ -1,11 +1,11 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import { createInsforgeServer } from "@/lib/insforge-server";
-import { discoverJobsDbJobs, toScoringInput } from "@/agent/jobsdb";
+import { discoverJobsDbJobs, toScoringInput, type JobsDbJob } from "@/agent/jobsdb";
 import { scoreJobs } from "@/agent/job-matcher";
 import { captureServerEvent } from "@/lib/posthog-server";
 import { MATCH_THRESHOLD } from "@/lib/utils";
-import type { Profile, JobInsert } from "@/types/index";
+import type { Profile, Job, JobInsert } from "@/types/index";
 
 // Block on actor run + dataset read — set high enough for a 10-job scrape.
 // Vercel Pro max is 300s; adjust down for Hobby (60s) or self-hosted.
@@ -76,12 +76,62 @@ export async function POST(request: NextRequest) {
       properties: { userId, jobTitle, location },
     });
 
-    // JobsDB HK discovery via Apify actor — failure marks run failed + returns 500.
-    let jobsDbJobs;
-    try {
-      jobsDbJobs = await discoverJobsDbJobs(jobTitle, location, 10);
-    } catch (error) {
-      console.error("[api/agent/find] jobsdb error:", error);
+    // URL-based deduplication: build existingByUrl BEFORE the actor loop so
+    // each iteration can check freshness without an extra DB round-trip.
+    const existingJobsResult = await insforge.database
+      .from("jobs")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("source_provider", "jobsdb_hk");
+
+    if (existingJobsResult.error) {
+      console.error("[api/agent/find] existing jobs query error:", existingJobsResult.error);
+      await insforge.database
+        .from("agent_runs")
+        .update({ status: "failed", completed_at: new Date().toISOString() })
+        .eq("id", runId)
+        .eq("user_id", userId);
+      return NextResponse.json(
+        { success: false, error: "Could not check saved jobs" },
+        { status: 500 },
+      );
+    }
+
+    // InsForge's dynamic query surface does not expose table generics here;
+    // the selected columns are the full jobs table row shape.
+    const existingJobs = (existingJobsResult.data ?? []) as Job[];
+    const existingByUrl = new Map<string, Job>();
+    for (const job of existingJobs) {
+      if (job.source_url) {
+        existingByUrl.set(job.source_url, job);
+      }
+    }
+
+    // Paginate the actor until we have ≥TARGET_NEW jobs not already in the DB,
+    // or we exhaust MAX_PAGES pages. Each iteration calls the actor with an
+    // increasing maxPages so it returns pages 1..N cumulatively (actor dedupes
+    // within its own run via seenUrls). We stop early when the actor returns
+    // fewer than a full page (no more listings available).
+    const TARGET_NEW = 10;
+    const MAX_PAGES = 5;
+    let allActorJobs: JobsDbJob[] = [];
+    let jobsDbError: Error | null = null;
+
+    for (let page = 1; page <= MAX_PAGES; page++) {
+      try {
+        allActorJobs = await discoverJobsDbJobs(jobTitle, location, page * 10, page);
+      } catch (err) {
+        jobsDbError = err as Error;
+        break;
+      }
+      const freshCount = allActorJobs.filter(
+        (j) => j.sourceUrl && !existingByUrl.has(j.sourceUrl),
+      ).length;
+      if (freshCount >= TARGET_NEW || allActorJobs.length < page * 10) break;
+    }
+
+    if (jobsDbError) {
+      console.error("[api/agent/find] jobsdb error:", jobsDbError);
       await insforge.database
         .from("agent_runs")
         .update({ status: "failed", completed_at: new Date().toISOString() })
@@ -93,28 +143,21 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // URL-based deduplication: skip any sourceUrl already in the DB for this user + provider.
-    const existingUrlsResult = await insforge.database
-      .from("jobs")
-      .select("source_url")
-      .eq("user_id", userId)
-      .eq("source_provider", "jobsdb_hk");
-
-    const existingUrls = new Set(
-      (existingUrlsResult.data ?? []).map((r: { source_url: string | null }) => r.source_url).filter(Boolean),
-    );
-
-    // Also dedupe within the batch by canonical sourceUrl.
-    const seenInBatch = new Set<string>();
-    const newJobs = jobsDbJobs.filter((job) => {
-      if (!job.sourceUrl || existingUrls.has(job.sourceUrl) || seenInBatch.has(job.sourceUrl)) {
+    // Dedupe actor results defensively and keep their order for display.
+    const seenActorUrls = new Set<string>();
+    const uniqueJobsDbJobs = allActorJobs.filter((job) => {
+      if (!job.sourceUrl || seenActorUrls.has(job.sourceUrl)) {
         return false;
       }
-      seenInBatch.add(job.sourceUrl);
+      seenActorUrls.add(job.sourceUrl);
       return true;
     });
 
-    const totalFound = jobsDbJobs.length;
+    const newJobs = uniqueJobsDbJobs.filter(
+      (job) => !existingByUrl.has(job.sourceUrl),
+    );
+
+    const totalFound = uniqueJobsDbJobs.length;
 
     // Batch scoring — index-aligned to newJobs (best-effort, never throws).
     const scores = await scoreJobs(
@@ -159,12 +202,16 @@ export async function POST(request: NextRequest) {
     });
 
     if (records.length === 0) {
+      const displayJobs = uniqueJobsDbJobs
+        .map((job) => existingByUrl.get(job.sourceUrl))
+        .filter((job): job is Job => Boolean(job));
+
       // All discovered jobs already in DB — still mark run complete.
       await insforge.database
         .from("agent_runs")
         .update({
           status: "completed",
-          jobs_found: 0,
+          jobs_found: totalFound,
           completed_at: new Date().toISOString(),
         })
         .eq("id", runId)
@@ -172,7 +219,7 @@ export async function POST(request: NextRequest) {
 
       return NextResponse.json({
         success: true,
-        jobs: [],
+        jobs: displayJobs,
         jobsFound: totalFound,
         newJobs: 0,
         successMessage: `Found ${totalFound} jobs — all already saved.`,
@@ -199,6 +246,17 @@ export async function POST(request: NextRequest) {
     }
 
     const newCount = insertedJobs.length;
+    const insertedByUrl = new Map<string, Job>();
+    for (const job of insertedJobs as Job[]) {
+      if (job.source_url) {
+        insertedByUrl.set(job.source_url, job);
+      }
+    }
+
+    const displayJobs = uniqueJobsDbJobs
+      .map((job) => insertedByUrl.get(job.sourceUrl) ?? existingByUrl.get(job.sourceUrl))
+      .filter((job): job is Job => Boolean(job));
+
     const strongMatches = insertedJobs.filter(
       (j) => (j.match_score ?? 0) >= MATCH_THRESHOLD,
     ).length;
@@ -225,7 +283,7 @@ export async function POST(request: NextRequest) {
       .from("agent_runs")
       .update({
         status: "completed",
-        jobs_found: newCount,
+        jobs_found: totalFound,
         completed_at: new Date().toISOString(),
       })
       .eq("id", runId)
@@ -233,7 +291,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      jobs: insertedJobs,
+      jobs: displayJobs,
       jobsFound: totalFound,
       newJobs: newCount,
       strongMatches,

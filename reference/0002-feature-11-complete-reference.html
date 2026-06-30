@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Feature 11 — Complete Reference</title>
+    <link rel="stylesheet" href="../assets/course.css" />
+    <style>
+      .section-divider {
+        border: none;
+        border-top: 2px solid var(--line);
+        margin: 28px 0 20px;
+      }
+      .code-label {
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--muted);
+        margin-bottom: 4px;
+      }
+      .rule {
+        display: flex;
+        gap: 10px;
+        padding: 8px 0;
+        border-bottom: 1px solid var(--line);
+        font-size: 14px;
+      }
+      .rule:last-child { border-bottom: none; }
+      .rule-icon { flex-shrink: 0; font-size: 15px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <article>
+        <p class="kicker">Reference 0002</p>
+        <h1>Feature 11 — Complete Reference</h1>
+        <p class="muted">Quick lookup for every concept in Feature 11. Designed for printing and desk reference.</p>
+
+        <!-- State taxonomy -->
+        <h2>State taxonomy</h2>
+        <table class="ref">
+          <thead>
+            <tr><th>Variable</th><th>Lives in</th><th>Changes when</th><th>Drives</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>match</code>, <code>sort</code>, <code>page</code>, <code>q</code></td><td>URL query params</td><td><code>replaceViewState()</code> is called</td><td>All filtering, sorting, pagination</td></tr>
+            <tr><td><code>filterTextDraft</code></td><td><code>useState</code></td><td>Every keystroke; also synced from <code>q</code> on back-nav</td><td>The text input value only</td></tr>
+            <tr><td><code>jobs</code></td><td><code>useState</code></td><td>Search completes (functional merge)</td><td>The underlying job list before filtering</td></tr>
+            <tr><td><code>jobTitle</code>, <code>location</code></td><td><code>useState</code></td><td>User types in agent inputs</td><td>The search POST body</td></tr>
+            <tr><td><code>isLoading</code>, <code>searchStatus</code></td><td><code>useState</code></td><td>Search starts / completes</td><td>SearchControls UI state</td></tr>
+          </tbody>
+        </table>
+
+        <p class="hint" style="font-size:13px;color:var(--muted);margin-top:6px;">Decision rule: if the value answers "what am I looking at?", it belongs in the URL. If it answers "what will happen when I click a button?", it stays in <code>useState</code>.</p>
+
+        <hr class="section-divider" />
+
+        <!-- Parse helpers -->
+        <h2>Parse helpers — <a href="../lib/find-jobs-utils.ts" style="font-size:14px;font-weight:normal;">lib/find-jobs-utils.ts</a></h2>
+        <table class="ref">
+          <thead>
+            <tr><th>Function</th><th>Input</th><th>Valid values</th><th>Default</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>parseMatch(raw)</code></td><td><code>string | null</code></td><td>"all" · "high" · "low"</td><td>"all"</td></tr>
+            <tr><td><code>parseSort(raw)</code></td><td><code>string | null</code></td><td>"score" · "newest" · "oldest"</td><td>"score"</td></tr>
+            <tr><td><code>parsePage(raw)</code></td><td><code>string | null</code></td><td>Positive integer string</td><td>1</td></tr>
+            <tr><td><code>parseQ(raw)</code></td><td><code>string | null</code></td><td>Any string</td><td>""</td></tr>
+          </tbody>
+        </table>
+
+        <hr class="section-divider" />
+
+        <!-- router.replace vs push -->
+        <h2>router.replace() vs router.push()</h2>
+        <div class="grid">
+          <section class="card">
+            <h3><code>router.replace(url)</code></h3>
+            <p>Overwrites current history entry. Back button goes to what was there before this page — not through intermediate filter states.</p>
+            <p><strong>Use for:</strong> match, sort, page, text filter (q) — all refinements of the same view.</p>
+          </section>
+          <section class="card">
+            <h3><code>router.push(url)</code></h3>
+            <p>Adds a new history entry. Back button returns to this page.</p>
+            <p><strong>Use for:</strong> clicking a job row (Feature 12) — navigating to a genuinely different page.</p>
+          </section>
+        </div>
+
+        <hr class="section-divider" />
+
+        <!-- Two-effect guard pattern -->
+        <h2>Two-effect guard pattern</h2>
+        <div class="code-label">FindJobsClient.tsx</div>
+        <pre><code>const [filterTextDraft, setFilterTextDraft] = useState(q);
+
+// Effect 1: URL → draft (back-nav sync)
+useEffect(() =&gt; {
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  setFilterTextDraft(q);
+}, [q]);
+
+// Effect 2: draft → URL (debounce typing)
+useEffect(() =&gt; {
+  if (filterTextDraft === q) return; // ← GUARD: prevents replace loop
+  const timeout = window.setTimeout(() =&gt; {
+    replaceViewState({ q: filterTextDraft, page: 1 });
+  }, 300);
+  return () =&gt; window.clearTimeout(timeout); // ← cleanup cancels timer
+}, [filterTextDraft]);</code></pre>
+        <p style="font-size:13px;">Without the guard: back-nav → Effect 1 sets draft → Effect 2 fires → replaceViewState → URL changes → Effect 1 fires → infinite loop. The guard short-circuits Effect 2 when draft already equals URL.</p>
+
+        <hr class="section-divider" />
+
+        <!-- Functional merge -->
+        <h2>Functional merge — <a href="../lib/find-jobs-utils.ts" style="font-size:14px;font-weight:normal;">find-jobs-utils.ts</a></h2>
+        <div class="code-label">FindJobsClient.tsx — handleSearch</div>
+        <pre><code>setJobs((currentJobs) =&gt; mergeJobsById(currentJobs, data.jobs as Job[]));</code></pre>
+        <div class="code-label">lib/find-jobs-utils.ts</div>
+        <pre><code>export function mergeJobsById&lt;T extends { id: string }&gt;(current, incoming): T[] {
+  const merged = new Map(current.map((job) =&gt; [job.id, job]));
+  for (const job of incoming) merged.set(job.id, job); // newer wins
+  return [...merged.values()];
+}</code></pre>
+        <p style="font-size:13px;">Always use the functional form <code>setJobs(prev =&gt; ...)</code> for merges. The closure form captures a stale <code>jobs</code> array if two searches overlap.</p>
+
+        <hr class="section-divider" />
+
+        <!-- Null score rules -->
+        <h2>Null score rules</h2>
+        <table class="ref">
+          <thead>
+            <tr><th>Check</th><th>Meaning</th><th>Filter behaviour</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>j.match_score != null &amp;&amp; j.match_score &gt;= 70</code></td><td>Scored and strong</td><td>High Match only</td></tr>
+            <tr><td><code>j.match_score != null &amp;&amp; j.match_score &lt; 70</code></td><td>Scored and weak</td><td>Low Match only</td></tr>
+            <tr><td><code>j.match_score == null</code></td><td>Not yet scored</td><td>All Matches only — shows "—" in score cell</td></tr>
+          </tbody>
+        </table>
+        <p style="font-size:13px;"><strong>Never use <code>?? 0</code>.</strong> It puts unscored jobs in Low Match where they do not belong. Use <code>!= null</code> (loose) to catch both <code>null</code> and <code>undefined</code>.</p>
+
+        <hr class="section-divider" />
+
+        <!-- Windowed pagination -->
+        <h2>Windowed pagination — <a href="../lib/find-jobs-utils.ts" style="font-size:14px;font-weight:normal;">find-jobs-utils.ts</a></h2>
+        <pre><code>buildPageNumbers(totalPages, safePage)
+// Always includes: 1 · last · safePage · safePage-1 · safePage+1
+// Inserts "..." wherever adjacent numbers in the sorted set differ by &gt; 1
+
+// Example: buildPageNumbers(20, 10) → [1, "...", 9, 10, 11, "...", 20]</code></pre>
+
+        <table class="ref">
+          <thead><tr><th>Variable</th><th>Defined in</th><th>Used in</th></tr></thead>
+          <tbody>
+            <tr><td><code>PAGE_SIZE = 20</code></td><td><code>FindJobsClient</code> (slices array)</td><td>Passed as <code>pageSize={PAGE_SIZE}</code> to <code>JobsPagination</code></td></tr>
+            <tr><td><code>safePage</code></td><td><code>Math.min(page, totalPages)</code></td><td>Array slice + passed to <code>buildPageNumbers</code></td></tr>
+          </tbody>
+        </table>
+        <p style="font-size:13px;"><code>PAGE_SIZE</code> must have one owner. If <code>JobsPagination</code> defines its own, the slice and the "Showing X to Y" label will diverge silently.</p>
+
+        <hr class="section-divider" />
+
+        <!-- Key rules summary -->
+        <h2>Rules to carry forward</h2>
+        <div class="rule"><span class="rule-icon">🔗</span><span>If it answers "what am I looking at?" → URL. If it answers "what happens when I click?" → <code>useState</code>.</span></div>
+        <div class="rule"><span class="rule-icon">🔁</span><span>Filter/sort/page changes → <code>router.replace()</code>. Row-click navigation → <code>router.push()</code>.</span></div>
+        <div class="rule"><span class="rule-icon">⏱️</span><span>Text input: <code>filterTextDraft</code> controls the visible input. URL <code>q</code> drives the filter. 300ms debounce between them. Guard prevents loop.</span></div>
+        <div class="rule"><span class="rule-icon">🗂️</span><span>After search: functional <code>setJobs(prev =&gt; mergeJobsById(prev, incoming))</code>. Never <code>setJobs(data.jobs)</code>.</span></div>
+        <div class="rule"><span class="rule-icon">❓</span><span>Unscored jobs (<code>match_score == null</code>) are not 0%. They only appear in All Matches. Never use <code>?? 0</code> for scores.</span></div>
+        <div class="rule"><span class="rule-icon">📄</span><span>One owner for <code>PAGE_SIZE</code>: the component that slices defines it; other components receive it as a prop.</span></div>
+        <div class="rule"><span class="rule-icon">🧪</span><span>Pure functions (parse helpers, merge, page numbers) live in <code>lib/find-jobs-utils.ts</code> so they can be tested in isolation.</span></div>
+      </article>
+    </main>
+  </body>
+</html>
