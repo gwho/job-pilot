@@ -1,0 +1,452 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Lesson 0005 — Debugging with Feedback Loops</title>
+    <link rel="stylesheet" href="../assets/course.css" />
+    <style>
+      .phase-header {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-top: 48px;
+        margin-bottom: 8px;
+        padding-top: 32px;
+        border-top: 2px solid var(--line);
+      }
+      .phase-number {
+        flex-shrink: 0;
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        background: var(--accent);
+        color: white;
+        font-size: 15px;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .phase-title { font-size: 22px; font-weight: 700; }
+      .danger { border-left: 4px solid #ef4444; background: #fef2f2; padding: 14px 16px; border-radius: 8px; margin: 16px 0; }
+      .danger strong { color: #991b1b; }
+      .success-callout { border-left: 4px solid var(--success); background: #ecfdf5; padding: 14px 16px; border-radius: 8px; margin: 16px 0; }
+      .success-callout strong { color: var(--success); }
+      .hypothesis-table { width: 100%; border-collapse: collapse; font-size: 14px; margin: 16px 0; }
+      .hypothesis-table th, .hypothesis-table td { padding: 9px 12px; border: 1px solid var(--line); text-align: left; }
+      .hypothesis-table th { background: var(--soft); font-weight: 600; }
+      .hypothesis-table .red-row { background: #fef2f2; }
+      .hypothesis-table .green-row { background: #f0fdf4; }
+      .toc { background: var(--soft); border: 1px solid var(--line); border-radius: 8px; padding: 16px 20px; margin-bottom: 32px; }
+      .toc ol { margin: 8px 0 0; padding-left: 20px; }
+      .toc li { margin: 4px 0; font-size: 14px; }
+      .flow {
+        font-family: monospace;
+        font-size: 13px;
+        background: #101828;
+        color: #f8fafc;
+        border-radius: 8px;
+        padding: 18px 20px;
+        line-height: 1.7;
+        white-space: pre;
+        overflow-x: auto;
+      }
+      .file-link { font-size: 12px; background: var(--soft); border: 1px solid var(--line); border-radius: 4px; padding: 2px 8px; font-family: monospace; }
+      .concept-tag {
+        display: inline-block;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        padding: 2px 8px;
+        border-radius: 100px;
+        background: var(--accent-soft);
+        color: var(--accent);
+        margin-bottom: 4px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <article>
+        <nav class="lesson-nav no-print">
+          <a href="0004-feature-11-complete-deep-dive.html">← Lesson 0004</a>
+          <a href="../reference/0002-feature-11-complete-reference.html">Reference Sheet</a>
+          <a href="../docs/diagnosing-bugs/find-jobs-silent-error/feedback-loop.md">Debug Session Record</a>
+          <a href="../docs/fixes/find-jobs-error-feedback/plan.md">Fix Plan</a>
+        </nav>
+
+        <p class="kicker">Lesson 0005</p>
+        <h1>Debugging with Feedback Loops</h1>
+        <p class="muted">
+          Grounded in the real debugging session from this project —
+          <a href="../components/find-jobs/FindJobsClient.tsx" class="file-link">FindJobsClient.tsx</a>
+          <a href="../__tests__/find-jobs/seam.test.tsx" class="file-link">seam.test.tsx</a>
+          <a href="../components/find-jobs/SearchControls.tsx" class="file-link">SearchControls.tsx</a>
+        </p>
+
+        <div class="callout">
+          <strong>What you will understand by the end:</strong> what a silent failure is and why it's the hardest bug to notice; how to build a red-capable test that proves a bug exists; why a GREEN test is just as useful as a RED one; and how to apply the "minimal change" principle when fixing a bug.
+        </div>
+
+        <div class="toc">
+          <strong>Four parts — each builds on the last:</strong>
+          <ol>
+            <li><a href="#part1">Silent Failure</a> — the bug category where nothing visibly breaks</li>
+            <li><a href="#part2">The Feedback Loop</a> — building a test that can go RED on this exact bug</li>
+            <li><a href="#part3">The GREEN Test</a> — how passing tests eliminate hypotheses</li>
+            <li><a href="#part4">The Fix</a> — the minimal change that solved it</li>
+          </ol>
+        </div>
+
+        <p>In <a href="0002-tdd-for-beginners.html">Lesson 0002</a> you learned that a test is a question with a known answer, and that TDD means writing the test before the code. This lesson is about something different: using tests to <em>hunt</em> a bug that already exists in running code.</p>
+
+        <p>The bug came from a real user report on this project: <em>"Whenever I click Find Jobs, the table only shows old results from before."</em> The symptom pointed at old data. The actual cause was something completely different.</p>
+
+        <!-- PART 1 -->
+        <div class="phase-header" id="part1">
+          <div class="phase-number">1</div>
+          <div class="phase-title">Silent Failure</div>
+        </div>
+
+        <span class="concept-tag">Bug category</span>
+        <p>A <strong>silent failure</strong> is an error that happens but produces no observable change in the UI. The program doesn't crash. No red screen. No console message visible to the user. The page looks exactly the same as it did before.</p>
+
+        <p>This is what the <code>handleSearch</code> function in
+          <a href="../components/find-jobs/FindJobsClient.tsx" class="file-link">FindJobsClient.tsx</a>
+          was doing when the API returned an error:</p>
+
+        <pre><code>if (!res.ok || !data.success) {
+  console.error("[FindJobsClient] search failed:", data?.error);
+  return;   // ← execution stops here
+}
+
+// These only run when search SUCCEEDS:
+setJobs(data.jobs as Job[]);
+setSearchStatus({ message: data.successMessage as string });
+replaceViewState({ page: 1 });</code></pre>
+
+        <p>When the Apify actor timed out (or the server returned any 5xx error), this branch ran. It called <code>console.error</code> — which writes to the browser's DevTools console, which most users never open — and then <code>return</code>ed from the function. The three lines after it never ran.</p>
+
+        <p>From the user's perspective, the visible outcome was:</p>
+        <ol class="steps">
+          <li>Button showed "Finding jobs…" for 30–60 seconds</li>
+          <li>Button re-enabled itself (the <code>finally</code> block ran — more on this in Part 4)</li>
+          <li>Table still showed the same old jobs</li>
+          <li>No banner appeared</li>
+        </ol>
+
+        <p>Step 4 is what made this hard: the banner was the only thing that would have told the user "something went wrong." Without the banner, this was identical to a successful search that found no new jobs. The user couldn't tell the difference between the two.</p>
+
+        <div class="danger">
+          <strong>Why console.error is not enough</strong><br>
+          A <code>console.error</code> writes a message to the browser's developer console. Developers see it because they have DevTools open. Real users never see it. If your error handling relies on <code>console.error</code>, it is invisible to users.
+        </div>
+
+        <div class="quiz">
+          <strong>Retrieval check 1:</strong> A user clicks "Find Jobs." The button spins for 45 seconds, then becomes clickable again. No banner appears. The table is unchanged. Name two different causes that could produce this exact result.
+          <details class="answer">
+            <summary>Reveal answer</summary>
+            <div class="success-callout">
+              <strong>Two valid causes:</strong><br>
+              <strong>(A) The search SUCCEEDED but found no new jobs</strong> — the actor ran, all 10 discovered jobs were already saved in the database, so <code>setJobs</code> was called with the same existing jobs, and a success banner <em>should have</em> appeared but would say "all already saved."<br><br>
+              <strong>(B) The search FAILED silently</strong> — the route returned an error, <code>handleSearch</code> hit the <code>return</code> branch, neither <code>setJobs</code> nor <code>setSearchStatus</code> was called, and the table and banner stayed exactly as they were.<br><br>
+              The key point: the visible symptom was the same for both causes. Only the banner could tell them apart — and that was exactly what was broken.
+            </div>
+          </details>
+        </div>
+
+        <!-- PART 2 -->
+        <div class="phase-header" id="part2">
+          <div class="phase-number">2</div>
+          <div class="phase-title">The Feedback Loop</div>
+        </div>
+
+        <span class="concept-tag">Diagnosing-bugs skill — Phase 1</span>
+        <p>The <code>/diagnosing-bugs</code> skill has one rule that overrides everything else: <strong>build a feedback loop before forming any hypothesis.</strong> A feedback loop is a test you can run in under two seconds that goes RED when the bug is present and GREEN when it is fixed.</p>
+
+        <p>Reading code to form a theory first is the failure mode. It anchors you on the first plausible idea — which is often wrong.</p>
+
+        <p>Before the fix, all 7 existing tests in
+          <a href="../__tests__/find-jobs/seam.test.tsx" class="file-link">seam.test.tsx</a>
+          used this helper:</p>
+
+        <pre><code>function mockFetch(body: object) {
+  global.fetch = vi.fn().mockResolvedValueOnce({
+    ok: true,                            // ← always success
+    json: () => Promise.resolve(body),
+  });
+}</code></pre>
+
+        <p>Every test assumed the API worked. Zero tests simulated a failure. The error path had been in the codebase since the feature shipped — untested, silent, waiting.</p>
+
+        <p>Two new tests were written, each targeting a different possible cause:</p>
+
+        <pre><code>// Test A — consecutive searches
+// Question: does setJobs update correctly when you search twice?
+global.fetch = vi.fn()
+  .mockResolvedValueOnce({
+    ok: true,
+    json: () => Promise.resolve({ success: true, jobs: searchAJobs, ... }),
+  })
+  .mockResolvedValueOnce({
+    ok: true,
+    json: () => Promise.resolve({ success: true, jobs: searchBJobs, ... }),
+  });</code></pre>
+
+        <pre><code>// Test B — error path
+// Question: does an error show a banner, or just silently return?
+global.fetch = vi.fn().mockResolvedValueOnce({
+  ok: false,         // ← simulates a 500 error
+  status: 500,
+  json: () => Promise.resolve({
+    success: false,
+    error: "Job search failed. Please try again.",
+  }),
+});</code></pre>
+
+        <p>Test B is the "red-capable" test: it drives the exact code path with the bug (<code>if (!res.ok ...)</code>), and it asserts the exact symptom the user described (an error message in the UI). When it ran against the buggy code, it timed out waiting for text that never appeared.</p>
+
+        <div class="success-callout">
+          <strong>What "red-capable" means:</strong> a test that can go RED on this specific bug. Not "any test that fails" — a test whose failure message exactly matches what the user reported. After the fix, the same test goes GREEN. That GREEN is what proves the bug is gone.
+        </div>
+
+        <div class="quiz">
+          <strong>Retrieval check 2:</strong> A test mocks a 500 API response and asserts <code>expect(screen.queryByText(/error/i)).not.toBeInTheDocument()</code>. Is this test red-capable for the silent failure bug? Explain why or why not.
+          <details class="answer">
+            <summary>Reveal answer</summary>
+            <div class="success-callout">
+              <strong>No — this is the wrong assertion.</strong><br>
+              <code>not.toBeInTheDocument()</code> asserts that the error text is <em>absent</em>. With the bug present, the error text IS absent (nothing shows), so this assertion passes — the test is GREEN when the bug exists. A red-capable test needs to assert that the error text <em>IS</em> present: <code>expect(screen.getByText(/error/i)).toBeInTheDocument()</code>. With the bug, this fails (RED). After the fix, it passes (GREEN).
+            </div>
+          </details>
+        </div>
+
+        <!-- PART 3 -->
+        <div class="phase-header" id="part3">
+          <div class="phase-number">3</div>
+          <div class="phase-title">The GREEN Test</div>
+        </div>
+
+        <span class="concept-tag">Binary search on hypotheses</span>
+        <p>When Test A and Test B ran, only one failed:</p>
+
+        <pre><code>Tests  1 failed | 7 passed (8)
+
+✓  second search replaces first search results   ← Test A: GREEN
+✗  shows error feedback when API returns failure ← Test B: RED</code></pre>
+
+        <p>Test A going GREEN was not a wasted test run. It answered a question: <em>does the component update correctly across multiple searches?</em> The answer was yes. That eliminated three of the four live hypotheses in one command:</p>
+
+        <table class="hypothesis-table">
+          <thead>
+            <tr>
+              <th>Hypothesis</th>
+              <th>What it predicted</th>
+              <th>Result</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr class="green-row">
+              <td>H2: <code>setJobs</code> breaks on second search</td>
+              <td>Test A would be RED</td>
+              <td><span class="badge badge-pass">Eliminated (Test A GREEN)</span></td>
+            </tr>
+            <tr class="green-row">
+              <td>H3: URL filters hide new results</td>
+              <td>Test A would be RED</td>
+              <td><span class="badge badge-pass">Eliminated (Test A GREEN)</span></td>
+            </tr>
+            <tr class="green-row">
+              <td>H4: job merging keeps old rows</td>
+              <td>Test A would be RED</td>
+              <td><span class="badge badge-pass">Eliminated (Test A GREEN)</span></td>
+            </tr>
+            <tr class="red-row">
+              <td><strong>H1: error path silently returns</strong></td>
+              <td>Test B would be RED</td>
+              <td><span class="badge badge-fail">Confirmed (Test B RED)</span></td>
+            </tr>
+          </tbody>
+        </table>
+
+        <p>This is <strong>binary search applied to hypotheses</strong>. A binary search doesn't check every possible value one by one — it picks the midpoint, reads the result, and eliminates half the search space. Here, Test A's GREEN result eliminated three-quarters of the hypothesis space at once.</p>
+
+        <p>If there had been four separate tests — one per hypothesis — and they ran one at a time starting from H2, it would have taken three failing runs to reach H1. Two carefully chosen tests reached H1 in one run.</p>
+
+        <div class="quiz">
+          <strong>Retrieval check 3:</strong> If Test A had gone RED instead of GREEN, what would that have meant — and would you still need to run Test B?
+          <details class="answer">
+            <summary>Reveal answer</summary>
+            <div class="success-callout">
+              <strong>RED Test A would have confirmed H2, H3, or H4</strong> — the component state is not updating correctly across multiple searches. You would NOT need to run Test B next, because Test B is about the error path. The investigation would instead focus on why <code>setJobs</code> or the <code>filtered</code> memo isn't producing the right output on a second search.<br><br>
+              The key insight: each test result narrows the next question. You follow the evidence, not a predetermined order.
+            </div>
+          </details>
+        </div>
+
+        <!-- PART 4 -->
+        <div class="phase-header" id="part4">
+          <div class="phase-number">4</div>
+          <div class="phase-title">The Fix</div>
+        </div>
+
+        <span class="concept-tag">Minimal change principle</span>
+        <p>Once H1 was confirmed, the fix was straightforward: the error path needed to call <code>setSearchStatus</code>, just like the success path did. The test told us exactly what was missing.</p>
+
+        <p>Three options were considered. Here is why two were rejected:</p>
+
+        <div class="danger">
+          <strong>Option B: add a separate <code>errorMessage</code> state</strong><br>
+          <code>const [errorMessage, setErrorMessage] = useState&lt;string | null&gt;(null);</code><br><br>
+          Creates a second banner. Now both <code>searchStatus</code> and <code>errorMessage</code> need to be cleared at the start of each search. If you forget to clear one, both banners show at once. More code, more edge cases, more things to get wrong.
+        </div>
+
+        <div class="danger">
+          <strong>Option C: throw an error for React's Error Boundary to catch</strong><br>
+          <code>throw new Error(data?.error);</code><br><br>
+          Error Boundaries are for crashes — unexpected errors that break the rendering tree. A 500 from the API is expected. It happens when the actor times out. Treating it like a crash would show the user a full-page error screen for something they should just be able to retry.
+        </div>
+
+        <div class="success-callout">
+          <strong>Option A: add <code>isError: true</code> to the existing <code>searchStatus</code> state (chosen)</strong><br>
+          The banner already existed. The <code>searchStatus</code> state already existed. The error path just wasn't using them. The minimal fix: call <code>setSearchStatus</code> with an error message. No new components, no new state, no new rendering path.
+        </div>
+
+        <p>Here is the fix in
+          <a href="../components/find-jobs/FindJobsClient.tsx" class="file-link">FindJobsClient.tsx</a>:</p>
+
+        <pre><code>// SearchStatus type — one new optional field
+type SearchStatus = {
+  message: string;
+  isError?: boolean;   // ← added
+};
+
+// Error path — now calls setSearchStatus
+if (!res.ok || !data.success) {
+  console.error("[FindJobsClient] search failed:", data?.error);
+  setSearchStatus({                                       // ← added
+    message: (data?.error as string) ?? "Search failed. Please try again.",
+    isError: true,
+  });
+  return;
+}</code></pre>
+
+        <p>And in
+          <a href="../components/find-jobs/SearchControls.tsx" class="file-link">SearchControls.tsx</a>
+          — the banner now reads <code>isError</code> to switch between green and red:</p>
+
+        <pre><code>{searchStatus && (
+  &lt;div
+    className={`mt-4 flex items-center gap-2 text-sm rounded-md px-4 py-2 ${
+      searchStatus.isError
+        ? "bg-error/10 text-error"            // ← red banner
+        : "bg-success-lightest text-success-foreground"  // ← green banner
+    }`}
+  &gt;
+    {searchStatus.isError ? &lt;AlertCircle size={14} /&gt; : &lt;Sparkles size={14} /&gt;}
+    {searchStatus.message}
+  &lt;/div&gt;
+)}</code></pre>
+
+        <h3>Why <code>isError?</code> is optional (not required)</h3>
+        <p>The <code>?</code> makes <code>isError</code> optional. That means the existing success-path code didn't need to change:</p>
+        <pre><code>setSearchStatus({ message: data.successMessage as string });
+// isError is not passed → it's undefined → treated as falsy → green banner</code></pre>
+        <p>If <code>isError</code> were required, every <code>setSearchStatus</code> call would need to pass it explicitly. Making it optional means "not passed" automatically means "not an error." Less code to change, smaller risk of breaking existing behaviour.</p>
+
+        <h3>Why <code>finally</code> already handled loading state correctly</h3>
+        <p>You may have noticed that <code>setIsLoading(false)</code> runs even on the error path. That's because it lives in a <code>finally</code> block:</p>
+        <pre><code>async function handleSearch() {
+  setIsLoading(true);
+  try {
+    // ... fetch, check errors, set jobs ...
+    if (!res.ok) {
+      setSearchStatus({ ... isError: true });
+      return;          // ← jumps to finally
+    }
+  } catch (error) {
+    // ...            ← also jumps to finally
+  } finally {
+    setIsLoading(false);  // ← ALWAYS runs, no matter what
+  }
+}</code></pre>
+
+        <p><code>finally</code> runs on every exit from the <code>try</code> block — including a <code>return</code> statement. This is the JavaScript equivalent of a software pattern called <strong>guaranteed cleanup</strong>: the loading state is always released, on every code path, with no exceptions.</p>
+
+        <p>A second new test confirmed this was already correct <em>before</em> the fix — the button was never stuck in loading state:</p>
+        <pre><code>it("clears the loading state after an API error so the button is re-enabled", async () => {
+  // mock: { ok: false }
+  await clickFindJobs();
+  await waitFor(() => {
+    const btn = screen.getByRole("button", { name: /find jobs/i });
+    expect(btn).not.toBeDisabled();    // ← passes on buggy AND fixed code
+  });
+});</code></pre>
+
+        <div class="quiz">
+          <strong>Retrieval check 4:</strong> The <code>catch</code> block at the bottom of <code>handleSearch</code> still only calls <code>console.error</code> — it does not call <code>setSearchStatus</code>. When does the <code>catch</code> block run (vs the <code>if (!res.ok)</code> branch)? Is the <code>catch</code> path also a silent failure?
+          <details class="answer">
+            <summary>Reveal answer</summary>
+            <div class="success-callout">
+              <strong>The <code>catch</code> block runs when <code>fetch</code> itself throws</strong> — not when the server returns an error. <code>fetch</code> throws on network-level failures: no internet connection, DNS failure, the request being aborted. It does NOT throw for 4xx or 5xx HTTP responses — those resolve normally with <code>ok: false</code>, handled by the <code>if</code> branch.<br><br>
+              <strong>Yes, the <code>catch</code> path is also a silent failure.</strong> If your WiFi drops mid-search, the user sees the same thing: spinner stops, old table, no banner. This was intentionally left unfixed in the same session — the fix would be identical (add <code>setSearchStatus({ message: "Network error...", isError: true })</code>), but it needs its own test first. One bug at a time, one test at a time.
+            </div>
+          </details>
+        </div>
+
+        <!-- SUMMARY -->
+        <h2 style="margin-top: 48px;">The debugging process in one diagram</h2>
+
+        <div class="flow">User report: "shows old results after search"
+         │
+         ▼
+┌─────────────────────────────────────────────┐
+│  Phase 1: Build a feedback loop             │
+│  DON'T form a hypothesis yet                │
+│  Write tests targeting the most plausible   │
+│  failure modes                              │
+└─────────────────┬───────────────────────────┘
+                  │
+         ▼ run tests
+         Test A (consecutive searches): GREEN → H2/H3/H4 eliminated
+         Test B (error path):           RED   → H1 confirmed
+                  │
+                  ▼
+┌─────────────────────────────────────────────┐
+│  Phase 2: Minimise                          │
+│  The minimal repro: mock { ok: false }      │
+│  assert banner text → times out (bug proven)│
+└─────────────────┬───────────────────────────┘
+                  │
+                  ▼
+┌─────────────────────────────────────────────┐
+│  Phase 5: Fix + regression test             │
+│  Add setSearchStatus to the error path      │
+│  Run Test B → now GREEN                     │
+│  All 37 tests pass                          │
+└─────────────────────────────────────────────┘</div>
+
+        <div class="callout" style="margin-top: 32px;">
+          <strong>The three things you just learned:</strong><br>
+          <strong>1. Silent failures</strong> — errors that leave the UI unchanged, invisible to users unless you have a test that checks the error path.<br>
+          <strong>2. Red-capable tests</strong> — tests that assert the user's exact symptom, not just "the component didn't crash."<br>
+          <strong>3. GREEN tests eliminate hypotheses</strong> — a passing test in a debugging session is useful evidence, not wasted effort. Binary search on hypotheses.
+        </div>
+
+        <h2>What to read next</h2>
+        <ul>
+          <li><a href="../docs/diagnosing-bugs/find-jobs-silent-error/reasoning.md">Deep reasoning document</a> — why each decision was made in the debugging session</li>
+          <li><a href="../docs/fixes/find-jobs-error-feedback/explanation.md">Fix explanation</a> — the three options considered and why Option A was chosen</li>
+          <li><a href="../docs/tutorials/21-find-jobs-error-feedback/README.md">Tutorial 21</a> — the full technical tutorial with challenges and an end-to-end trace</li>
+        </ul>
+
+        <div class="callout" style="margin-top: 32px; background: #f5f3ff; border-color: var(--accent);">
+          <strong>Ask your teacher a question.</strong> If anything in this lesson is unclear — the <code>finally</code> block, the hypothesis table, why <code>isError?</code> is optional — type your question in the chat and continue the explanation from there. Debugging is a skill built by practice and questioning, not passive reading.
+        </div>
+
+      </article>
+    </main>
+  </body>
+</html>

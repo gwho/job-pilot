@@ -272,6 +272,24 @@ const { items } = await client.dataset(run.defaultDatasetId!).listItems();
 
 The actor loads a Playwright `storageState` from the **Apify KV store** under the key `JOBSDB_SESSION`. The developer captures this manually and uploads it once to Apify. JobPilot never stores JobsDB credentials. See `docs/plan/10b-jobsdb-discovery/session-capture.md` for the full capture process.
 
+### JobsDB search URL format
+
+Use JobsDB's SEO search path, not the generic query-parameter route:
+
+```text
+https://hk.jobsdb.com/{query-slug}-jobs
+https://hk.jobsdb.com/{query-slug}-jobs/in-{location-slug}
+https://hk.jobsdb.com/{query-slug}-jobs/in-{location-slug}?page=2
+```
+
+Example:
+
+```text
+https://hk.jobsdb.com/sales-coordinator-jobs/in-Hong-Kong
+```
+
+Do not use `https://hk.jobsdb.com/jobs?q=...&l=...` for actor search. Live Apify runs showed that URL can render generic JobsDB listings that do not match the typed keyword.
+
 ### JobsDB job record mapping
 
 ```typescript

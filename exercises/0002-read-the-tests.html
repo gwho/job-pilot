@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Exercise 0002 — Read the Tests</title>
+    <link rel="stylesheet" href="../assets/course.css" />
+    <style>
+      .test-block {
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        overflow: hidden;
+        margin: 20px 0;
+      }
+      .test-block-header {
+        background: var(--soft);
+        padding: 10px 16px;
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--muted);
+        border-bottom: 1px solid var(--line);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .test-block pre { margin: 0; border-radius: 0; }
+      .predict-box {
+        padding: 14px 16px;
+        border-top: 1px solid var(--line);
+        background: white;
+      }
+      .predict-box .question { font-weight: 600; font-size: 14px; margin-bottom: 10px; }
+      .test-line-ref {
+        font-size: 12px;
+        font-family: monospace;
+        background: var(--accent-soft);
+        color: var(--accent);
+        padding: 1px 6px;
+        border-radius: 4px;
+      }
+      .impl-link { font-size: 13px; color: var(--muted); text-align: right; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <article>
+        <nav class="lesson-nav no-print">
+          <a href="../lessons/0004-feature-11-complete-deep-dive.html">← Back to Lesson 0004</a>
+          <a href="0001-url-action-trace.html">← Exercise 1</a>
+          <a href="../__tests__/find-jobs/utils.test.ts">utils.test.ts</a>
+          <a href="../lib/find-jobs-utils.ts">find-jobs-utils.ts</a>
+        </nav>
+
+        <p class="kicker">Exercise 0002</p>
+        <h1>Read the Tests</h1>
+        <p class="muted">For each test below, predict what it is checking and whether it will pass or fail before looking at the implementation. This is the most important skill in working with tested code.</p>
+
+        <div class="callout">
+          <strong>How to use this exercise:</strong> read the test code only. Do not look at <a href="../lib/find-jobs-utils.ts">find-jobs-utils.ts</a> yet. Answer the prediction question. Then open the implementation and check your reasoning. The number of tests you get right is less important than the quality of your reasoning for each one.
+        </div>
+
+        <!-- Test 1 -->
+        <div class="test-block">
+          <div class="test-block-header">
+            <span>utils.test.ts <span class="test-line-ref">lines 21–23</span></span>
+            <span class="impl-link"><a href="../lib/find-jobs-utils.ts">See implementation →</a></span>
+          </div>
+          <pre><code>it("returns 'all' for null", () =&gt; {
+  expect(parseMatch(null)).toBe("all");
+});</code></pre>
+          <div class="predict-box">
+            <div class="question">What is this test checking? Why would <code>null</code> be passed to <code>parseMatch</code>?</div>
+            <details class="answer">
+              <summary>Reveal answer</summary>
+              <p>This checks that a missing URL parameter (no <code>?match=</code> in the URL) produces a safe default. <code>searchParams.get("match")</code> returns <code>null</code> when the parameter is absent. Passing <code>null</code> to <code>parseMatch</code> simulates the first page load with no URL params. The expected return value is <code>"all"</code> — the default match filter.</p>
+            </details>
+          </div>
+        </div>
+
+        <!-- Test 2 -->
+        <div class="test-block">
+          <div class="test-block-header">
+            <span>utils.test.ts <span class="test-line-ref">lines 25–29</span></span>
+            <span class="impl-link"><a href="../lib/find-jobs-utils.ts">See implementation →</a></span>
+          </div>
+          <pre><code>it("returns 'all' for invalid strings", () =&gt; {
+  expect(parseMatch("medium")).toBe("all");
+  expect(parseMatch("")).toBe("all");
+  expect(parseMatch("HIGH")).toBe("all");
+});</code></pre>
+          <div class="predict-box">
+            <div class="question">Why does <code>parseMatch("HIGH")</code> return <code>"all"</code> even though "high" is a valid filter? What does this tell you about how the check is written?</div>
+            <details class="answer">
+              <summary>Reveal answer</summary>
+              <p>The check uses <code>.includes()</code> on a fixed array <code>["all", "high", "low"]</code>. JavaScript string comparison is case-sensitive. <code>"HIGH"</code> is not strictly equal to <code>"high"</code>, so it is not found in the array, and the function falls back to <code>"all"</code>. This is intentional — the URL is set programmatically by <code>replaceViewState</code>, which always writes lowercase values. A user manually typing <code>?match=HIGH</code> in the address bar is typing something the app never generates — treat it as invalid.</p>
+            </details>
+          </div>
+        </div>
+
+        <!-- Test 3 -->
+        <div class="test-block">
+          <div class="test-block-header">
+            <span>utils.test.ts <span class="test-line-ref">lines 68–75</span></span>
+            <span class="impl-link"><a href="../lib/find-jobs-utils.ts">See implementation →</a></span>
+          </div>
+          <pre><code>it("returns 1 for non-numeric strings", () =&gt; {
+  expect(parsePage("abc")).toBe(1);
+  expect(parsePage("")).toBe(1);
+  expect(parsePage("1.5")).toBe(1);
+});</code></pre>
+          <div class="predict-box">
+            <div class="question">Why does <code>parsePage("1.5")</code> return <code>1</code> (the default) rather than the number <code>1</code> (which would seem like a valid page)? Hint: think about what <code>parseInt("1.5")</code> returns in JavaScript.</div>
+            <details class="answer">
+              <summary>Reveal answer</summary>
+              <p><code>parseInt("1.5")</code> returns the integer <code>1</code>. Then the check is <code>Number.isFinite(1) && 1 > 0</code> — both true. So actually <code>parsePage("1.5")</code> returns <code>1</code>, the first page — not because of the fallback, but because <code>parseInt</code> truncates the decimal. The test is checking that the function does not crash or return <code>NaN</code> for decimal strings. The test comment says "non-numeric" but <code>"1.5"</code> is technically parseable — it just truncates to 1, which happens to be the same as the default. You can verify this by reading the implementation.</p>
+            </details>
+          </div>
+        </div>
+
+        <!-- Test 4 -->
+        <div class="test-block">
+          <div class="test-block-header">
+            <span>utils.test.ts <span class="test-line-ref">lines 96–99</span></span>
+            <span class="impl-link"><a href="../lib/find-jobs-utils.ts">See implementation →</a></span>
+          </div>
+          <pre><code>it("returns all pages when total is 5 or fewer", () =&gt; {
+  expect(buildPageNumbers(3, 2)).toEqual([1, 2, 3]);
+  expect(buildPageNumbers(5, 3)).toEqual([1, 2, 3, 4, 5]);
+});</code></pre>
+          <div class="predict-box">
+            <div class="question">Why does the algorithm have a special case for 5 or fewer pages? What would the windowed algorithm produce for <code>buildPageNumbers(3, 2)</code> if the special case were removed?</div>
+            <details class="answer">
+              <summary>Reveal answer</summary>
+              <p>The special case is a simplification: when there are few enough pages to show them all, the windowed logic is unnecessary overhead. Without the special case, <code>buildPageNumbers(3, 2)</code> would: build Set <code>{1, 3, 2, 1, 3}</code> → deduplicated: <code>{1, 2, 3}</code> → sorted: <code>[1, 2, 3]</code> → walk: no gaps > 1 between any adjacent numbers → result <code>[1, 2, 3]</code>. The same result. So the special case is an optimisation for clarity and performance, not a correction. You could remove it and the tests would still pass.</p>
+            </details>
+          </div>
+        </div>
+
+        <!-- Test 5 -->
+        <div class="test-block">
+          <div class="test-block-header">
+            <span>utils.test.ts <span class="test-line-ref">lines 118–123</span></span>
+            <span class="impl-link"><a href="../lib/find-jobs-utils.ts">See implementation →</a></span>
+          </div>
+          <pre><code>it("inserts ellipsis for gaps", () =&gt; {
+  const pages = buildPageNumbers(20, 10);
+  expect(pages).toContain("...");
+  expect(pages.filter((p) =&gt; p === "...").length).toBe(2);
+});</code></pre>
+          <div class="predict-box">
+            <div class="question">Without running the code, predict the full array that <code>buildPageNumbers(20, 10)</code> returns. Then count how many <code>"..."</code> entries it should have.</div>
+            <details class="answer">
+              <summary>Reveal answer</summary>
+              <p>Set: <code>{1, 20, 10, 9, 11}</code> → sorted: <code>[1, 9, 10, 11, 20]</code> → walk: 1, gap 8 to 9 → add "...", 9, 10, 11, gap 9 to 20 → add "...", 20 → <code>[1, "...", 9, 10, 11, "...", 20]</code>. Two <code>"..."</code> entries, confirming the test expectation.</p>
+            </details>
+          </div>
+        </div>
+
+        <!-- Test 6 -->
+        <div class="test-block">
+          <div class="test-block-header">
+            <span>utils.test.ts <span class="test-line-ref">lines 153–159</span></span>
+            <span class="impl-link"><a href="../lib/find-jobs-utils.ts">See implementation →</a></span>
+          </div>
+          <pre><code>it("overwrites existing jobs with incoming data on id collision", () =&gt; {
+  const current = [{ id: "a", title: "Old A" }];
+  const incoming = [{ id: "a", title: "New A" }];
+  const result = mergeJobsById(current, incoming);
+  expect(result).toHaveLength(1);
+  expect(result[0].title).toBe("New A");
+});</code></pre>
+          <div class="predict-box">
+            <div class="question">This is the test that documents the bug that existed before Feature 11. What was the old (broken) implementation doing, and how does this test catch it?</div>
+            <details class="answer">
+              <summary>Reveal answer</summary>
+              <p>The old implementation was <code>setJobs(data.jobs)</code> — it replaced the entire jobs array with only the new batch. If a job with <code>id: "a"</code> existed from a previous search, it would be lost. More precisely for this test: the old code would have returned <code>[{ id: "a", title: "New A" }]</code> — which would actually pass this particular test because it checks <code>toHaveLength(1)</code> and <code>title === "New A"</code>. The test that would have caught the real bug is "preserves existing jobs not in the incoming batch" (line 145) — the old code would return length 1 instead of 2 for that test.</p>
+            </details>
+          </div>
+        </div>
+
+        <!-- Challenge -->
+        <div class="quiz" style="margin-top: 32px;">
+          <h2>Challenge: write a test that was missing</h2>
+          <p>Look at the <code>buildPageNumbers</code> tests. One edge case is not tested: what happens when <code>safePage</code> equals <code>totalPages</code> (user is on the last page)?</p>
+          <p>Without looking at the implementation, write the test. What array do you expect <code>buildPageNumbers(20, 20)</code> to return?</p>
+          <details class="answer">
+            <summary>Reveal expected answer + test code</summary>
+            <p>Set: <code>{1, 20, 20, 19, 21}</code> → clamp: <code>21</code> is filtered out (> totalPages) → <code>{1, 19, 20}</code> → sorted: <code>[1, 19, 20]</code> → walk: 1, gap 18 to 19 → "...", 19, 20 → <code>[1, "...", 19, 20]</code>.</p>
+            <pre><code>it("shows current page when on last page", () =&gt; {
+  const pages = buildPageNumbers(20, 20);
+  expect(pages).toEqual([1, "...", 19, 20]);
+});</code></pre>
+            <p>This test does not exist in the current file. You could add it to <a href="../__tests__/find-jobs/utils.test.ts">utils.test.ts</a> right now and run <code>npm run test:run</code> to confirm it passes.</p>
+          </details>
+        </div>
+
+        <div class="callout">
+          <strong>Next step:</strong> add the missing test from the challenge above to <a href="../__tests__/find-jobs/utils.test.ts">utils.test.ts</a> and run <code>npm run test:run</code>. If it passes, you understood the algorithm correctly. If it fails, read the implementation again and find where your model diverged.
+        </div>
+      </article>
+    </main>
+  </body>
+</html>

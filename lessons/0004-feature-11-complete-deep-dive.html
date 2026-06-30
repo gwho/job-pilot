@@ -1,0 +1,526 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Lesson 0004 — Feature 11 Complete Deep Dive</title>
+    <link rel="stylesheet" href="../assets/course.css" />
+    <style>
+      .part-header {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-top: 48px;
+        margin-bottom: 8px;
+        padding-top: 32px;
+        border-top: 2px solid var(--line);
+      }
+      .part-number {
+        flex-shrink: 0;
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        background: var(--accent);
+        color: white;
+        font-size: 15px;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .part-title { font-size: 22px; font-weight: 700; line-height: 1.2; }
+      .resource-link {
+        font-size: 13px;
+        color: var(--muted);
+        margin-top: -10px;
+        margin-bottom: 20px;
+      }
+      .resource-link a { color: var(--accent); }
+      .danger { border-left: 4px solid #ef4444; background: #fef2f2; padding: 14px 16px; border-radius: 8px; margin: 16px 0; }
+      .danger code { background: #fee2e2; border-color: #fca5a5; }
+      .success-callout { border-left: 4px solid var(--success); background: #ecfdf5; padding: 14px 16px; border-radius: 8px; margin: 16px 0; }
+      .toc { background: var(--soft); border: 1px solid var(--line); border-radius: 8px; padding: 16px 20px; margin-bottom: 32px; }
+      .toc ol { margin: 8px 0 0; padding-left: 20px; }
+      .toc li { margin: 4px 0; font-size: 14px; }
+      .file-link { font-size: 12px; background: var(--soft); border: 1px solid var(--line); border-radius: 4px; padding: 2px 8px; font-family: monospace; }
+      .arrow { color: var(--muted); }
+    </style>
+  </head>
+  <body>
+    <main>
+      <article>
+        <nav class="lesson-nav no-print">
+          <a href="0001-url-view-state-in-jobpilot.html">← Lesson 0001</a>
+          <a href="../reference/0002-feature-11-complete-reference.html">Full Reference Sheet</a>
+          <a href="../exercises/0001-url-action-trace.html">Exercise: Trace URL Changes</a>
+          <a href="../exercises/0002-read-the-tests.html">Exercise: Read the Tests</a>
+        </nav>
+
+        <p class="kicker">Lesson 0004</p>
+        <h1>Feature 11 — Complete Deep Dive</h1>
+        <p class="muted">
+          Based on
+          <a href="../docs/tutorials/20-filter-sort-pagination-deep-dive/README.md">the full tutorial</a>,
+          <a href="../docs/plan/11-filter-sort-pagination/explanation.md">explanation.md</a>, and the real files:
+          <a href="../components/find-jobs/FindJobsClient.tsx" class="file-link">FindJobsClient.tsx</a>
+          <a href="../lib/find-jobs-utils.ts" class="file-link">find-jobs-utils.ts</a>
+          <a href="../__tests__/find-jobs/utils.test.ts" class="file-link">utils.test.ts</a>
+        </p>
+
+        <div class="callout">
+          <strong>What you will understand by the end:</strong> every design decision in Feature 11 — why the URL holds filter state, why the text input has two pieces of state, why the merge uses a functional update, why null scores need special handling, and how the windowed pagination algorithm works. Six concepts, each grounded in real code you can open right now.
+        </div>
+
+        <div class="toc">
+          <strong>Six parts — read in order, each builds on the last:</strong>
+          <ol>
+            <li><a href="#part1">URL as View State</a> — why filters live in the URL, not React state</li>
+            <li><a href="#part2">replace() vs push()</a> — the browser history stack and the back-button rule</li>
+            <li><a href="#part3">Two Pieces of State for One Input</a> — the debounce pattern and its guard</li>
+            <li><a href="#part4">Merging Jobs After Search</a> — the data loss bug and the functional fix</li>
+            <li><a href="#part5">Null Score Semantics</a> — why <code>?? 0</code> hides jobs and how to fix it</li>
+            <li><a href="#part6">Windowed Pagination</a> — the algorithm and the one-owner rule</li>
+          </ol>
+        </div>
+
+        <!-- ================================================================ -->
+        <div class="part-header" id="part1">
+          <div class="part-number">1</div>
+          <div class="part-title">URL as View State</div>
+        </div>
+        <p class="resource-link">Primary source: <a href="https://nextjs.org/docs/app/api-reference/functions/use-search-params">Next.js useSearchParams docs</a> · <a href="https://nextjs.org/docs/app/building-your-application/routing/linking-and-navigating">Linking and Navigating guide</a></p>
+
+        <h3>The problem that forced this decision</h3>
+        <p>Before Feature 11, filter state lived in <code>useState</code> inside <code>FindJobsClient</code>. This worked fine until you thought about Feature 12, which adds row-click navigation to job detail pages.</p>
+        <p>Imagine this: a user filters to "High Match", navigates to page 3, finds a job they like, clicks it, reads the detail page, presses back. Where do they land?</p>
+        <p>With <code>useState</code>: page 1, no filter applied. The state was destroyed when they navigated away. React does not save component state across navigation — it mounts the component fresh every time it appears.</p>
+        <p>With URL: the browser restores the exact URL the user was on. <code>useSearchParams()</code> reads <code>?match=high&amp;page=3</code> and the table renders exactly as the user left it.</p>
+
+        <h3>How useSearchParams() works</h3>
+        <p>Open <a href="../components/find-jobs/FindJobsClient.tsx">FindJobsClient.tsx</a> and find lines 44–52:</p>
+        <pre><code>const searchParams = useSearchParams();
+const router = useRouter();
+const pathname = usePathname();
+
+// View state — derived from URL on every render
+const match = parseMatch(searchParams.get("match"));
+const sort  = parseSort(searchParams.get("sort"));
+const page  = parsePage(searchParams.get("page"));
+const q     = parseQ(searchParams.get("q"));</code></pre>
+        <p><code>useSearchParams()</code> is <em>reactive</em>. That word means: when the URL changes — from any source, including the browser back button — this hook triggers a re-render. The component reads the new values automatically. You do not need a <code>useEffect</code> to watch for URL changes.</p>
+        <p>Notice there is no <code>useState</code> for any of these four values. They are derived from the URL on every render. There is only one source of truth.</p>
+
+        <h3>Parse helpers: why they exist</h3>
+        <p>The URL is a string. A user could type <code>?match=banana</code> in the address bar. The parse helpers in <a href="../lib/find-jobs-utils.ts">lib/find-jobs-utils.ts</a> coerce any invalid value to a sensible default silently:</p>
+        <pre><code>export function parseMatch(raw: string | null): MatchFilter {
+  return (["all", "high", "low"] as const).includes(raw as MatchFilter)
+    ? (raw as MatchFilter)
+    : "all"; // anything invalid becomes "all"
+}</code></pre>
+        <p>The pattern is the same for all four: if the value is valid, use it; if not, use the default. The tests in <a href="../__tests__/find-jobs/utils.test.ts">utils.test.ts</a> verify all the edge cases — <code>null</code>, empty string, wrong capitalisation, nonsense strings.</p>
+
+        <h3>Why Suspense is required</h3>
+        <p>Add <code>useSearchParams()</code> to a component and Next.js App Router requires that component to be wrapped in <code>&lt;Suspense&gt;</code>. Without it, the build fails. Open <a href="../app/find-jobs/page.tsx">app/find-jobs/page.tsx</a>:</p>
+        <pre><code>&lt;Suspense fallback={null}&gt;
+  &lt;FindJobsClient initialJobs={(jobs as Job[]) ?? []} /&gt;
+&lt;/Suspense&gt;</code></pre>
+        <p><code>fallback={null}</code> — not a spinner, not a skeleton — because the Server Component (<code>FindJobsPage</code>) already fetched the jobs and delivered the rendered HTML before the client hydrates. There is no loading state to show. A spinner would flash briefly and vanish, which is worse than nothing.</p>
+
+        <div class="quiz">
+          <h3>Retrieval check — Part 1</h3>
+          <p>A user is on <code>/find-jobs?match=high&amp;page=3</code>, clicks a job row, and presses the browser back button. With URL state, what does the URL look like when they land back on Find Jobs?</p>
+          <details class="answer">
+            <summary>Reveal answer</summary>
+            <p><code>/find-jobs?match=high&amp;page=3</code> — exactly as they left it. The browser restores the URL from the history entry. <code>useSearchParams()</code> reads it. The table renders with "High Match" filter and page 3 active. Nothing was lost.</p>
+          </details>
+        </div>
+
+        <!-- ================================================================ -->
+        <div class="part-header" id="part2">
+          <div class="part-number">2</div>
+          <div class="part-title">replace() vs push()</div>
+        </div>
+        <p class="resource-link">Primary source: <a href="https://nextjs.org/docs/app/api-reference/functions/use-router">Next.js useRouter docs</a> · <a href="https://developer.mozilla.org/docs/Web/API/History_API">MDN History API</a></p>
+
+        <h3>The browser history stack</h3>
+        <p>Your browser keeps a stack of visited URLs. Every tab has one. A "stack" is like a pile of cards — you can add to the top, go back one step, or go forward one step. You cannot jump to the middle.</p>
+        <p>Two methods change this stack differently:</p>
+        <table class="ref">
+          <thead><tr><th>Method</th><th>What it does to the stack</th></tr></thead>
+          <tbody>
+            <tr><td><code>router.push(url)</code></td><td>Adds a new card on top. Back goes to the previous card.</td></tr>
+            <tr><td><code>router.replace(url)</code></td><td>Replaces the current card in place. Back goes to what was before this card.</td></tr>
+          </tbody>
+        </table>
+
+        <h3>Why filter changes must use replace()</h3>
+        <p>Imagine the user does this on Find Jobs, and every filter change uses <code>push()</code>:</p>
+        <ol>
+          <li>Loads <code>/find-jobs</code> — stack: <code>[/find-jobs ←]</code></li>
+          <li>Sets match to "High" — stack: <code>[/find-jobs, /find-jobs?match=high ←]</code></li>
+          <li>Changes sort to "Newest" — stack: <code>[/find-jobs, ?match=high, ?match=high&amp;sort=newest ←]</code></li>
+          <li>Clicks a job — stack: <code>[/find-jobs, ?match=high, ?match=high&amp;sort=newest, /find-jobs/42 ←]</code></li>
+          <li>Presses back → lands on <code>?match=high&amp;sort=newest</code> ✓</li>
+          <li>Presses back → lands on <code>?match=high</code> — still on Find Jobs 🚫</li>
+          <li>Presses back → lands on <code>/find-jobs</code> — still on Find Jobs 🚫</li>
+          <li>Presses back → finally leaves Find Jobs</li>
+        </ol>
+        <p>Four back-presses to leave a page the user visited once. With <code>replace()</code>, steps 2 and 3 both overwrite the same card. The stack stays at two entries: Find Jobs + the job detail. Two back-presses, the second of which leaves.</p>
+
+        <h3>The replaceViewState helper</h3>
+        <p>All filter/sort/page changes in <code>FindJobsClient</code> go through one function — <code>replaceViewState</code>. It reads the current params, applies the updates, and calls <code>router.replace()</code>:</p>
+        <pre><code>function replaceViewState(updates: {
+  q?: string; match?: MatchFilter; sort?: Sort; page?: number
+}) {
+  const params = new URLSearchParams(searchParams.toString()); // copy current
+  if ("q" in updates) {
+    if (updates.q) params.set("q", updates.q);
+    else params.delete("q"); // empty string removes the param entirely
+  }
+  if ("match" in updates) params.set("match", updates.match!);
+  if ("sort"  in updates) params.set("sort",  updates.sort!);
+  if ("page"  in updates) params.set("page",  String(updates.page));
+  router.replace(`${pathname}?${params.toString()}`);
+}</code></pre>
+        <p>Notice that it copies the current params first (<code>new URLSearchParams(searchParams.toString())</code>). Changing the sort does not erase the current match filter. Each update is surgical — only the specified keys change.</p>
+
+        <h3>The rule</h3>
+        <div class="grid">
+          <section class="card">
+            <h3>Use replace()</h3>
+            <p>Refining the same view — filter, sort, page, text search. The user is adjusting <em>how they see this data</em>, not going to a new page.</p>
+          </section>
+          <section class="card">
+            <h3>Use push()</h3>
+            <p>Navigating to a different page — clicking a job row (Feature 12). The user is going <em>somewhere new</em> and should be able to come back from it with one back-press.</p>
+          </section>
+        </div>
+
+        <div class="quiz">
+          <h3>Retrieval check — Part 2</h3>
+          <p>A "Reset all filters" button calls <code>replaceViewState({ match: "all", sort: "score", page: 1, q: "" })</code>. Should it use <code>replace()</code> or <code>push()</code>? And will pressing back after clicking it restore the old filters?</p>
+          <details class="answer">
+            <summary>Reveal answer</summary>
+            <p><strong>replace()</strong> — resetting filters is a refinement of the same view, not navigation to a new page. And <strong>no</strong>, pressing back will not restore the old filters — <code>replace()</code> overwrites the current history entry. To make "undo reset" work you would need <code>push()</code>, but that adds an unwanted back-button stop. The standard choice for filter resets is <code>replace()</code>; undo is not expected.</p>
+          </details>
+        </div>
+
+        <!-- ================================================================ -->
+        <div class="part-header" id="part3">
+          <div class="part-number">3</div>
+          <div class="part-title">Two Pieces of State for One Input</div>
+        </div>
+        <p class="resource-link">Primary source: <a href="https://react.dev/reference/react/useEffect">React useEffect docs</a> · <a href="https://react.dev/learn/you-might-not-need-an-effect">You Might Not Need an Effect</a></p>
+
+        <h3>The problem: you cannot control a text input from the URL directly</h3>
+        <p>If the text filter input read directly from the URL param and called <code>router.replace()</code> on every keystroke, typing the word "react" would fire five URL updates: <code>r</code>, <code>re</code>, <code>rea</code>, <code>reac</code>, <code>react</code>. Each triggers a re-render cycle. The input would feel laggy or broken — characters would appear out of order or with visible delay.</p>
+
+        <h3>The solution: split into display state and view state</h3>
+        <p>Feature 11 separates these concerns into two completely independent pieces of state:</p>
+        <table class="ref">
+          <thead><tr><th>Name</th><th>Stored in</th><th>Updates when</th><th>Drives</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><code>filterTextDraft</code></td>
+              <td><code>useState</code></td>
+              <td>Every keystroke — instant</td>
+              <td>The visible input value</td>
+            </tr>
+            <tr>
+              <td>URL <code>q</code> param</td>
+              <td><code>useSearchParams()</code></td>
+              <td>300ms after typing stops</td>
+              <td>The actual filter in <code>useMemo</code></td>
+            </tr>
+          </tbody>
+        </table>
+        <p>The input shows the draft. The filter uses the URL. They are decoupled. The user sees instant typing. The filter updates feel almost instant (300ms is imperceptible for filtering).</p>
+
+        <h3>The two useEffects — read carefully</h3>
+        <p>Find these in <a href="../components/find-jobs/FindJobsClient.tsx">FindJobsClient.tsx</a> around lines 64–83:</p>
+        <pre><code>// Effect 1 — sync URL → draft  (back/forward navigation)
+useEffect(() => {
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  setFilterTextDraft(q);
+}, [q]);
+
+// Effect 2 — debounce draft → URL  (typing)
+useEffect(() => {
+  if (filterTextDraft === q) return;  // &lt;-- the guard
+  const timeout = window.setTimeout(() => {
+    replaceViewState({ q: filterTextDraft, page: 1 });
+  }, 300);
+  return () => window.clearTimeout(timeout);
+}, [filterTextDraft]);</code></pre>
+
+        <p><strong>Effect 1</strong> runs when <code>q</code> (the URL param) changes. The only time <code>q</code> changes without the user typing is back/forward navigation. When the browser restores <code>?q=react</code>, Effect 1 fires and resets the input to show "react".</p>
+        <p><strong>Effect 2</strong> runs when <code>filterTextDraft</code> changes — i.e., when the user types. It waits 300ms and then writes to the URL. The cleanup function (<code>return () => clearTimeout(...)</code>) cancels the timer if the user types again before 300ms is up — so only the final keystroke triggers a URL update.</p>
+
+        <h3>Why the guard is required</h3>
+        <p>The line <code>if (filterTextDraft === q) return</code> in Effect 2 is what prevents an infinite loop. Without it:</p>
+        <ol class="steps">
+          <li><div>Back-nav changes URL to <code>?q=react</code></div></li>
+          <li><div>Effect 1 fires → sets <code>filterTextDraft = "react"</code></div></li>
+          <li><div>Effect 2 fires (because <code>filterTextDraft</code> changed) → calls <code>replaceViewState({ q: "react" })</code></div></li>
+          <li><div>URL changes → Effect 1 fires again → loop continues forever</div></li>
+        </ol>
+
+        <div class="success-callout">
+          <strong>With the guard:</strong> at step 3, Effect 2 checks <code>filterTextDraft === q</code>. Both are "react". The check is true. It returns immediately. No URL update fires. No loop.
+        </div>
+
+        <h3>What the filter actually uses</h3>
+        <p>The <code>useMemo</code> filter pipeline uses <code>q</code> (from the URL), not <code>filterTextDraft</code>. This is intentional. The filter only changes when the URL changes — after the debounce settles — not on every keystroke.</p>
+        <pre><code>if (q.trim()) {
+  const lower = q.toLowerCase();
+  result = result.filter(
+    (j) =>
+      j.company?.toLowerCase().includes(lower) ||
+      j.title?.toLowerCase().includes(lower),
+  );
+}</code></pre>
+
+        <div class="quiz">
+          <h3>Retrieval check — Part 3</h3>
+          <p>The user types "node" into the text filter, waits 400ms (so the URL updates to <code>?q=node</code>), then immediately presses the browser back button (restoring <code>?q=react</code> from the previous history entry). What does the text input show, and what does the filter use, immediately after the back button is pressed?</p>
+          <details class="answer">
+            <summary>Reveal answer</summary>
+            <p>The URL is now <code>?q=react</code>. Effect 1 fires and sets <code>filterTextDraft = "react"</code>. The text input immediately shows "react". The <code>useMemo</code> filter reads <code>q = "react"</code> from the URL. Both the visible input and the filter now show "react". The guard in Effect 2 prevents any replace loop because <code>filterTextDraft === q</code> is true.</p>
+          </details>
+        </div>
+
+        <!-- ================================================================ -->
+        <div class="part-header" id="part4">
+          <div class="part-number">4</div>
+          <div class="part-title">Merging Jobs After Search</div>
+        </div>
+        <p class="resource-link">Primary source: <a href="https://react.dev/reference/react/useState#updating-state-based-on-the-previous-state">React useState — functional updates</a> · <a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Map">MDN Map</a></p>
+
+        <h3>The bug that existed before Feature 11</h3>
+        <p>The original <code>handleSearch</code> did this after a search returned:</p>
+        <div class="danger">
+          <pre><code>setJobs(data.jobs); // &lt;-- BUG: replaces ALL history</code></pre>
+          <p>If a user ran two searches — "Senior React Developer" then "React Engineer" — they could only see jobs from the <em>second</em> search. All jobs from the first search were gone.</p>
+        </div>
+
+        <h3>The merge fix</h3>
+        <p>The fixed version in <a href="../lib/find-jobs-utils.ts">lib/find-jobs-utils.ts</a>:</p>
+        <pre><code>export function mergeJobsById&lt;T extends { id: string }&gt;(
+  current: T[],
+  incoming: T[],
+): T[] {
+  const merged = new Map(current.map((job) => [job.id, job]));
+  for (const job of incoming) {
+    merged.set(job.id, job); // newer data wins on id collision
+  }
+  return [...merged.values()];
+}</code></pre>
+        <p>Step by step:</p>
+        <ol class="steps">
+          <li><div>Turn the current jobs into a <code>Map</code> keyed by <code>id</code>. A Map cannot have duplicate keys — this is the deduplication mechanism.</div></li>
+          <li><div>Loop through the incoming (new) jobs. For each one, <code>merged.set(job.id, job)</code> either adds a new job or overwrites an existing one with the same <code>id</code> — newer data wins.</div></li>
+          <li><div>Convert the Map back to an array with <code>[...merged.values()]</code>.</div></li>
+        </ol>
+        <p>Jobs from previous searches are preserved. Jobs in both searches are deduplicated. Freshly scored jobs replace their unscored versions.</p>
+
+        <h3>Why the functional form matters</h3>
+        <p>In <a href="../components/find-jobs/FindJobsClient.tsx">FindJobsClient.tsx</a>, the call is:</p>
+        <pre><code>setJobs((currentJobs) => mergeJobsById(currentJobs, data.jobs as Job[]));</code></pre>
+        <p>The key is <code>(currentJobs) =&gt;</code>. This is the <strong>functional form</strong> of state update. React guarantees that <code>currentJobs</code> is the actual current state when the setter runs — regardless of what else happened since <code>handleSearch</code> started.</p>
+
+        <div class="danger">
+          <p>The <strong>closure form</strong> would be: <code>setJobs(mergeJobsById(jobs, data.jobs))</code>. Here <code>jobs</code> is captured from the outer scope at the time <code>handleSearch</code> was called. If two searches overlap — the second starts before the first finishes — the second search's closure has a stale <code>jobs</code> array. It would overwrite whatever the first search already wrote.</p>
+        </div>
+
+        <div class="success-callout">
+          <strong>Rule:</strong> whenever a state update depends on the <em>previous</em> value of that state, always use the functional form <code>setState(prev => ...)</code>.
+        </div>
+
+        <h3>Why router.refresh() would not have worked</h3>
+        <p><code>router.refresh()</code> re-runs the Server Component and passes fresh <code>initialJobs</code> as a prop to <code>FindJobsClient</code>. But <code>useState(initialJobs)</code> only uses its argument on the <em>first render</em> — the mount. After that, React ignores prop changes to the initial value. Calling <code>router.refresh()</code> updates the prop but the state stays unchanged.</p>
+        <p>To make it work you would need <code>useEffect(() =&gt; setJobs(initialJobs), [initialJobs])</code> — which is an anti-pattern (effect syncing props to state) and also causes a visible flash as the list jumps to the server data after already showing the merged result.</p>
+
+        <div class="quiz">
+          <h3>Retrieval check — Part 4</h3>
+          <p>You have 10 jobs from a first search. You run a second search that returns 5 jobs — 2 are new, 3 are the same as before (same <code>id</code>) but now have a <code>match_score</code> that was null before. After the merge, how many total jobs are in the array?</p>
+          <details class="answer">
+            <summary>Reveal answer</summary>
+            <p><strong>12 jobs.</strong> 10 original + 2 brand new = 12. The 3 overlapping jobs (same <code>id</code>) are overwritten in place — the Map deduplicates them. The Map starts with 10 entries (from current), then 5 sets run (2 add new entries, 3 overwrite existing ones). Final Map has 12 entries. The 3 overwritten jobs now have match scores.</p>
+          </details>
+        </div>
+
+        <!-- ================================================================ -->
+        <div class="part-header" id="part5">
+          <div class="part-number">5</div>
+          <div class="part-title">Null Score Semantics</div>
+        </div>
+        <p class="resource-link">Primary source: <a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Equality_comparisons_and_sameness">MDN Equality comparisons</a> · <a href="../CONTEXT.md">CONTEXT.md</a> (domain definitions)</p>
+
+        <h3>What an unscored job is</h3>
+        <p>When the Apify actor discovers a job but the AI matcher has not yet run (or failed), the database stores <code>match_score IS NULL</code>. This is not a 0% match. It is "unknown." The job was found; it has not been evaluated yet.</p>
+
+        <h3>The ?? 0 trap</h3>
+        <div class="danger">
+          <pre><code>// Wrong
+const score = job.match_score ?? 0;
+result.filter(j =&gt; j.match_score &lt; MATCH_THRESHOLD); // includes nulls-as-zero</code></pre>
+          <p>Nullish coalescing (<code>?? 0</code>) turns every unscored job into a 0% match. The filter then puts them in "Low Match." If the user switches to "High Match" or "Low Match," unscored jobs vanish completely from view. They are effectively hidden in a category where they do not belong.</p>
+        </div>
+
+        <h3>The correct approach: explicit null check</h3>
+        <pre><code>// High Match — exclude null explicitly
+result.filter(j =&gt; j.match_score != null &amp;&amp; j.match_score &gt;= MATCH_THRESHOLD)
+
+// Low Match — exclude null explicitly
+result.filter(j =&gt; j.match_score != null &amp;&amp; j.match_score &lt; MATCH_THRESHOLD)
+
+// All Matches — no filter; null scores appear here</code></pre>
+
+        <p>Unscored jobs only appear in "All Matches" — the default view. They are never in High or Low. In the score cell, they show a neutral dash:</p>
+        <pre><code>{job.match_score != null ? (
+  &lt;MatchScoreBar score={job.match_score} /&gt;
+) : (
+  &lt;span className="text-sm text-text-muted"&gt;—&lt;/span&gt;
+)}</code></pre>
+
+        <h3>!= null vs !== null</h3>
+        <p>Notice the check is <code>!= null</code> (double equals, loose), not <code>!== null</code> (triple equals, strict).</p>
+        <table class="ref">
+          <thead><tr><th>Check</th><th>Catches</th><th>Misses</th></tr></thead>
+          <tbody>
+            <tr><td><code>!== null</code></td><td><code>null</code></td><td><code>undefined</code></td></tr>
+            <tr><td><code>!= null</code></td><td>Both <code>null</code> and <code>undefined</code></td><td>nothing relevant</td></tr>
+          </tbody>
+        </table>
+        <p>TypeScript says the type is <code>number | null</code>, but JavaScript at runtime can produce <code>undefined</code> for optional fields — for example, when the JSON from the API omits the field entirely rather than setting it to <code>null</code>. The loose check is defensive and costs nothing.</p>
+
+        <div class="quiz">
+          <h3>Retrieval check — Part 5</h3>
+          <p>A job has <code>match_score: null</code>. The user's current filter is "Low Match". Does the job appear in the table? Why?</p>
+          <details class="answer">
+            <summary>Reveal answer</summary>
+            <p><strong>No.</strong> The Low Match filter is <code>j.match_score != null &amp;&amp; j.match_score &lt; MATCH_THRESHOLD</code>. The first condition (<code>j.match_score != null</code>) is false for this job. Short-circuit evaluation means the second condition is never checked. The job is excluded from Low Match entirely. It would only appear if the user switches to "All Matches."</p>
+          </details>
+        </div>
+
+        <!-- ================================================================ -->
+        <div class="part-header" id="part6">
+          <div class="part-number">6</div>
+          <div class="part-title">Windowed Pagination</div>
+        </div>
+        <p class="resource-link">Primary source: <a href="https://react.dev/reference/react/useMemo">React useMemo docs</a> · <a href="../lib/find-jobs-utils.ts">lib/find-jobs-utils.ts</a></p>
+
+        <h3>The naive approach and its failure</h3>
+        <p>A simple pagination bar might show:</p>
+        <pre><code>[1] [2] [3] [...] [20]</code></pre>
+        <p>If the user is on page 10, they have no idea where they are. They see pages 1, 2, 3, and 20 — but not 10. They cannot tell if they are near the beginning or middle. This is the naive approach that existed before Feature 11.</p>
+
+        <h3>The windowed algorithm</h3>
+        <p>The goal: always show page 1, the last page, the current page, and the pages immediately before and after the current page. Fill gaps with <code>"..."</code>.</p>
+        <p>Open <a href="../lib/find-jobs-utils.ts">lib/find-jobs-utils.ts</a> and find <code>buildPageNumbers</code>:</p>
+        <pre><code>export function buildPageNumbers(
+  totalPages: number,
+  safePage: number,
+): (number | "...")[] {
+  // If 5 or fewer total pages, just show them all
+  if (totalPages &lt;= 5) {
+    return Array.from({ length: totalPages }, (_, i) =&gt; i + 1);
+  }
+
+  // Collect the pages that should always be visible
+  const neighbours = new Set(
+    [1, totalPages, safePage, safePage - 1, safePage + 1]
+      .filter(p =&gt; p &gt;= 1 &amp;&amp; p &lt;= totalPages) // clamp to valid range
+  );
+
+  // Sort them ascending
+  const sorted = [...neighbours].sort((a, b) =&gt; a - b);
+
+  // Walk through and insert "..." wherever there is a gap
+  const result: (number | "...")[] = [];
+  for (let i = 0; i &lt; sorted.length; i++) {
+    if (i &gt; 0 &amp;&amp; sorted[i] - sorted[i - 1] &gt; 1) result.push("...");
+    result.push(sorted[i]);
+  }
+  return result;
+}</code></pre>
+
+        <h3>Walking through an example</h3>
+        <p>Current page: 10. Total pages: 20.</p>
+        <ol class="steps">
+          <li><div><strong>Build the Set:</strong> <code>{1, 20, 10, 9, 11}</code></div></li>
+          <li><div><strong>Sort it:</strong> <code>[1, 9, 10, 11, 20]</code></div></li>
+          <li><div><strong>Walk and insert gaps:</strong>
+            <ul>
+              <li><code>1</code> → add 1</li>
+              <li><code>9</code> — gap of 8 from 1 → add <code>"..."</code>, then 9</li>
+              <li><code>10</code> — gap of 1 from 9 → no gap, add 10</li>
+              <li><code>11</code> — gap of 1 from 10 → no gap, add 11</li>
+              <li><code>20</code> — gap of 9 from 11 → add <code>"..."</code>, then 20</li>
+            </ul>
+          </div></li>
+          <li><div><strong>Result:</strong> <code>[1, "...", 9, 10, 11, "...", 20]</code></div></li>
+        </ol>
+        <p>The user can see they are on page 10, near the middle. They can jump to 9, 11, 1, or 20 with one click.</p>
+
+        <h3>safePage: clamping to avoid an empty screen</h3>
+        <p>In <a href="../components/find-jobs/FindJobsClient.tsx">FindJobsClient.tsx</a>:</p>
+        <pre><code>const safePage = Math.min(page, totalPages);</code></pre>
+        <p>If a user is on page 5 and switches from "All Matches" (40 jobs, 2 pages) to "High Match" (8 jobs, 1 page), <code>page</code> from the URL is still 5 but <code>totalPages</code> is 1. <code>safePage</code> clamps to 1. The slice uses <code>safePage</code>, so the user sees the last valid page instead of an empty table.</p>
+
+        <h3>PAGE_SIZE has one owner</h3>
+        <p><code>PAGE_SIZE = 20</code> is defined in <code>FindJobsClient</code> (which slices the array) and passed as a prop to <code>JobsPagination</code> (which shows the "Showing X to Y of Z" label).</p>
+        <div class="danger">
+          <p>Before Feature 11, <code>JobsPagination</code> had its own independent <code>const PAGE_SIZE = 6</code>. The slice showed 20 jobs per page but the label said "Showing 1 to 6 of 42." TypeScript never caught this — both constants were just numbers. The only way to catch it would have been a test or a visual inspection.</p>
+        </div>
+        <div class="success-callout">
+          <strong>Rule:</strong> the component that performs a computation owns the constant that governs it. Other components that only <em>display</em> derived values receive it as a prop.
+        </div>
+
+        <div class="quiz">
+          <h3>Retrieval check — Part 6</h3>
+          <p>Call <code>buildPageNumbers(20, 2)</code> by hand. What does the returned array look like, and how many <code>"..."</code> entries does it contain?</p>
+          <details class="answer">
+            <summary>Reveal answer</summary>
+            <p>Set: <code>{1, 20, 2, 1, 3}</code> → after dedup and sort: <code>[1, 2, 3, 20]</code>. Walking: 1 → add 1. 2, gap 1 → add 2. 3, gap 1 → add 3. 20, gap 17 → add <code>"..."</code>, add 20. Result: <code>[1, 2, 3, "...", 20]</code>. One <code>"..."</code> entry.</p>
+          </details>
+        </div>
+
+        <!-- ================================================================ -->
+        <h2 style="margin-top: 48px; padding-top: 32px; border-top: 2px solid var(--line);">Practice Exercises</h2>
+        <p>These two exercises develop the ability to trace code by reading it — not by running it. That skill is what lets you predict bugs before they happen.</p>
+
+        <div class="grid">
+          <section class="card">
+            <h3><a href="../exercises/0001-url-action-trace.html">Exercise 1 — Trace URL Changes</a></h3>
+            <p>Given a sequence of user actions, predict what the URL looks like after each step. Work purely from the code in <code>FindJobsClient.tsx</code> without running the app.</p>
+          </section>
+          <section class="card">
+            <h3><a href="../exercises/0002-read-the-tests.html">Exercise 2 — Read the Tests</a></h3>
+            <p>For each test in <code>utils.test.ts</code>, predict the result before running it. Then read the implementation in <code>find-jobs-utils.ts</code> to confirm your reasoning.</p>
+          </section>
+        </div>
+
+        <!-- ================================================================ -->
+        <h2 style="margin-top: 32px;">All External Resources</h2>
+        <p class="muted">See <a href="../RESOURCES.md">RESOURCES.md</a> for the full list. Key links per concept:</p>
+        <table class="ref">
+          <thead><tr><th>Concept</th><th>Best primary source</th></tr></thead>
+          <tbody>
+            <tr><td>URL view state</td><td><a href="https://nextjs.org/docs/app/api-reference/functions/use-search-params">Next.js useSearchParams</a></td></tr>
+            <tr><td>History stack / replace vs push</td><td><a href="https://nextjs.org/docs/app/building-your-application/routing/linking-and-navigating">Next.js Linking and Navigating</a></td></tr>
+            <tr><td>useEffect (when to use it)</td><td><a href="https://react.dev/learn/you-might-not-need-an-effect">You Might Not Need an Effect</a></td></tr>
+            <tr><td>Functional state updates</td><td><a href="https://react.dev/reference/react/useState#updating-state-based-on-the-previous-state">React useState — functional updates</a></td></tr>
+            <tr><td>Map for deduplication</td><td><a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Map">MDN Map</a></td></tr>
+            <tr><td>null vs undefined equality</td><td><a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Equality_comparisons_and_sameness">MDN Equality comparisons</a></td></tr>
+          </tbody>
+        </table>
+
+        <div class="callout" style="margin-top: 24px;">
+          <strong>Ask your AI teacher anything that is unclear.</strong> Good starting questions: "Walk me through the guard in Effect 2 one more time, using a different example." — "Why would React batch state updates, and why does that matter for the merge?" — "Show me what the history stack looks like step by step for a user who changes filter, changes sort, clicks a job, reads it, and presses back."
+        </div>
+
+      </article>
+    </main>
+  </body>
+</html>

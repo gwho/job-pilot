@@ -19,10 +19,18 @@
     "maxItems": {
       "title": "Maximum results",
       "type": "integer",
-      "description": "Maximum number of job listings to scrape (search results + detail pages). Keep at 10 for v1.",
+      "description": "Maximum number of unique job listings to scrape in total across all pages.",
       "default": 10,
       "minimum": 1,
-      "maximum": 50
+      "maximum": 100
+    },
+    "maxPages": {
+      "title": "Maximum search result pages",
+      "type": "integer",
+      "description": "How many pages of search results to paginate through. Each page yields ~10 jobs. Increase with maxItems for larger searches.",
+      "default": 1,
+      "minimum": 1,
+      "maximum": 10
     }
   },
   "required": ["query"]

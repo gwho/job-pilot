@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Exercise 0001 — Trace URL Changes</title>
+    <link rel="stylesheet" href="../assets/course.css" />
+    <style>
+      .exercise {
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 20px;
+        margin: 24px 0;
+        background: var(--soft);
+      }
+      .exercise h3 { margin-top: 0; }
+      .url-box {
+        font-family: monospace;
+        font-size: 13px;
+        background: #101828;
+        color: #f8fafc;
+        border-radius: 6px;
+        padding: 10px 14px;
+        margin: 8px 0;
+      }
+      .action-list { list-style: none; padding: 0; margin: 12px 0; }
+      .action-list li {
+        display: flex;
+        gap: 10px;
+        padding: 8px 0;
+        border-bottom: 1px solid var(--line);
+        font-size: 14px;
+      }
+      .action-list li:last-child { border-bottom: none; }
+      .action-icon {
+        flex-shrink: 0;
+        font-size: 16px;
+        width: 24px;
+        text-align: center;
+      }
+      .hint { font-size: 13px; color: var(--muted); margin-top: 6px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <article>
+        <nav class="lesson-nav no-print">
+          <a href="../lessons/0004-feature-11-complete-deep-dive.html">← Back to Lesson 0004</a>
+          <a href="0002-read-the-tests.html">Exercise 2 →</a>
+          <a href="../components/find-jobs/FindJobsClient.tsx">FindJobsClient.tsx</a>
+        </nav>
+
+        <p class="kicker">Exercise 0001</p>
+        <h1>Trace URL Changes</h1>
+        <p class="muted">For each scenario below, predict the URL after each user action. Work from the code in <a href="../components/find-jobs/FindJobsClient.tsx">FindJobsClient.tsx</a> — do not run the app yet.</p>
+
+        <div class="callout">
+          <strong>How to use this exercise:</strong> read the starting URL and the list of actions. Write down your predicted URL after each action on paper or in a text file. Then reveal the answer and compare. The goal is to notice the moment your prediction diverges from reality — that moment tells you exactly which concept needs more attention.
+        </div>
+
+        <!-- Scenario 1 -->
+        <div class="exercise">
+          <h3>Scenario 1 — Basic filter chain</h3>
+          <p><strong>Starting URL:</strong></p>
+          <div class="url-box">/find-jobs</div>
+          <p><strong>Actions:</strong></p>
+          <ul class="action-list">
+            <li><span class="action-icon">🖱️</span> User clicks "High Match" filter button</li>
+            <li><span class="action-icon">🖱️</span> User clicks sort dropdown and selects "Newest"</li>
+            <li><span class="action-icon">🖱️</span> User clicks page 2</li>
+          </ul>
+          <details class="answer">
+            <summary>Reveal answers (step by step)</summary>
+            <p><strong>After "High Match":</strong> <code>/find-jobs?match=high&amp;page=1</code><br>
+            <em>Why page=1?</em> The handler is <code>replaceViewState({ match: next, page: 1 })</code> — match changes always reset to page 1.</p>
+            <p><strong>After "Newest":</strong> <code>/find-jobs?match=high&amp;page=1&amp;sort=newest</code><br>
+            <em>Why is match still there?</em> <code>replaceViewState</code> copies the current params first (<code>new URLSearchParams(searchParams.toString())</code>) before applying the update. Only <code>sort</code> changes.</p>
+            <p><strong>After page 2:</strong> <code>/find-jobs?match=high&amp;page=2&amp;sort=newest</code><br>
+            <em>Why replace, not push?</em> Pagination is a refinement of the current view. <code>onPageChange</code> calls <code>replaceViewState({ page: p })</code>.</p>
+          </details>
+        </div>
+
+        <!-- Scenario 2 -->
+        <div class="exercise">
+          <h3>Scenario 2 — Text filter debounce</h3>
+          <p><strong>Starting URL:</strong></p>
+          <div class="url-box">/find-jobs?match=high</div>
+          <p><strong>Actions:</strong></p>
+          <ul class="action-list">
+            <li><span class="action-icon">⌨️</span> User types "r" in the text filter input</li>
+            <li><span class="action-icon">⌨️</span> User immediately types "e" (50ms after the previous keystroke)</li>
+            <li><span class="action-icon">⌨️</span> User immediately types "a" (50ms after)</li>
+            <li><span class="action-icon">⏱️</span> User stops typing. 300ms passes.</li>
+          </ul>
+          <p class="hint">Hint: think about what the debounce timer does when the user types before it fires.</p>
+          <details class="answer">
+            <summary>Reveal answers</summary>
+            <p><strong>After "r":</strong> URL is still <code>/find-jobs?match=high</code>. The debounce timer starts (300ms). <code>filterTextDraft</code> = "r".</p>
+            <p><strong>After "e" (50ms later):</strong> URL still <code>/find-jobs?match=high</code>. The previous debounce timer was cancelled by the cleanup function. A new 300ms timer starts. <code>filterTextDraft</code> = "re".</p>
+            <p><strong>After "a" (50ms later):</strong> URL still <code>/find-jobs?match=high</code>. Timer cancelled again. New timer starts. <code>filterTextDraft</code> = "rea".</p>
+            <p><strong>After 300ms:</strong> URL becomes <code>/find-jobs?match=high&amp;page=1&amp;q=rea</code>. The timer fired and called <code>replaceViewState({ q: "rea", page: 1 })</code>. Page resets to 1. The match filter is preserved because <code>replaceViewState</code> only changes the keys you specify.</p>
+          </details>
+        </div>
+
+        <!-- Scenario 3 -->
+        <div class="exercise">
+          <h3>Scenario 3 — Back navigation restores state</h3>
+          <p><strong>Starting URL:</strong></p>
+          <div class="url-box">/find-jobs?match=high&amp;q=react&amp;page=2</div>
+          <p><strong>Actions:</strong></p>
+          <ul class="action-list">
+            <li><span class="action-icon">🖱️</span> User clicks a job row (Feature 12 — uses <code>router.push("/find-jobs/42")</code>)</li>
+            <li><span class="action-icon">⬅️</span> User presses the browser back button</li>
+          </ul>
+          <p><strong>After pressing back, what does the text filter input show?</strong></p>
+          <details class="answer">
+            <summary>Reveal answers</summary>
+            <p><strong>After clicking the job:</strong> URL is <code>/find-jobs/42</code>. A new history entry was added (push).</p>
+            <p><strong>After pressing back:</strong> URL is <code>/find-jobs?match=high&amp;q=react&amp;page=2</code>. The browser restores the previous history entry.</p>
+            <p><strong>What does the text input show?</strong> "react". When the URL changes, <code>q</code> becomes "react". Effect 1 fires: <code>setFilterTextDraft("react")</code>. The input immediately updates. Effect 2 fires but sees <code>filterTextDraft === q</code> → exits early. No loop.</p>
+          </details>
+        </div>
+
+        <!-- Scenario 4 -->
+        <div class="exercise">
+          <h3>Scenario 4 — Invalid URL params</h3>
+          <p><strong>Starting URL (user typed this manually):</strong></p>
+          <div class="url-box">/find-jobs?match=banana&amp;page=-1&amp;sort=NEWEST</div>
+          <p><strong>What will the filter, page, and sort actually be when the component renders?</strong></p>
+          <details class="answer">
+            <summary>Reveal answer</summary>
+            <p><strong>match:</strong> <code>"all"</code>. <code>parseMatch("banana")</code> — "banana" is not in <code>["all", "high", "low"]</code> → fallback to "all".</p>
+            <p><strong>page:</strong> <code>1</code>. <code>parsePage("-1")</code> — parseInt gives -1, which fails <code>n > 0</code> → fallback to 1.</p>
+            <p><strong>sort:</strong> <code>"score"</code>. <code>parseSort("NEWEST")</code> — "NEWEST" is not in <code>["score", "newest", "oldest"]</code> (case-sensitive comparison) → fallback to "score".</p>
+            <p>The table renders with defaults. No crash. No error message. The URL still shows the invalid values — the parse helpers only coerce for use, they do not rewrite the URL.</p>
+          </details>
+        </div>
+
+        <!-- Scenario 5 -->
+        <div class="exercise">
+          <h3>Scenario 5 — Filter reduces page count</h3>
+          <p><strong>Starting URL:</strong></p>
+          <div class="url-box">/find-jobs?match=all&amp;page=5</div>
+          <p>All Matches has 100 jobs (5 pages of 20). The user switches to "High Match", which has 15 jobs (1 page).</p>
+          <p><strong>What is <code>safePage</code>? What slice of jobs does the user see?</strong></p>
+          <details class="answer">
+            <summary>Reveal answer</summary>
+            <p><code>page</code> from the URL is 5. <code>totalPages</code> is 1 (15 jobs / 20 per page, rounded up). <code>safePage = Math.min(5, 1) = 1</code>.</p>
+            <p>The slice is <code>filtered.slice(0, 20)</code> — all 15 High Match jobs, starting at index 0. The user sees page 1 of results, not an empty page.</p>
+            <p>The URL still says <code>page=5</code> — the clamping is silent (it does not call <code>replaceViewState</code>). If the user then changes another filter, the next <code>replaceViewState</code> call will include <code>page=1</code> explicitly and clean it up.</p>
+          </details>
+        </div>
+
+        <div class="callout">
+          <strong>Now run the app:</strong> start <code>npm run dev</code>, navigate to <code>/find-jobs</code>, and repeat these scenarios in the real browser. Watch the URL bar as you interact. Compare what you see to your predictions. Any difference is worth investigating.
+        </div>
+      </article>
+    </main>
+  </body>
+</html>

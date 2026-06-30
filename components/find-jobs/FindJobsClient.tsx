@@ -10,7 +10,6 @@ import {
   parsePage,
   parseQ,
   buildPageNumbers,
-  mergeJobsById,
 } from "@/lib/find-jobs-utils";
 import { SearchControls } from "./SearchControls";
 import { JobFilters, type MatchFilter, type Sort } from "./JobFilters";
@@ -21,8 +20,8 @@ import type { Job } from "@/types/index";
 const PAGE_SIZE = 20;
 
 type SearchStatus = {
-  jobsFound: number;
-  strongMatches: number;
+  message: string;
+  isError?: boolean;
 };
 
 type Props = {
@@ -99,16 +98,18 @@ export function FindJobsClient({ initialJobs }: Props) {
 
       if (!res.ok || !data.success) {
         console.error("[FindJobsClient] search failed:", data?.error);
+        setSearchStatus({
+          message: (data?.error as string) ?? "Search failed. Please try again.",
+          isError: true,
+        });
         return;
       }
 
-      // Merge by id — functional form avoids stale closure if searches overlap
-      setJobs((currentJobs) => mergeJobsById(currentJobs, data.jobs as Job[]));
+      // After an agent search, the table represents the latest search result.
+      // The initial page load still shows saved history before any search runs.
+      setJobs(data.jobs as Job[]);
 
-      setSearchStatus({
-        jobsFound: data.jobsFound,
-        strongMatches: data.strongMatches,
-      });
+      setSearchStatus({ message: data.successMessage as string });
 
       // Reset to page 1 — preserve q, match, sort
       replaceViewState({ page: 1 });
