@@ -1,0 +1,384 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Lesson 0010 — Feature 12: Verification and Plan Review Exercise</title>
+    <link rel="stylesheet" href="../assets/course.css" />
+    <style>
+      .checklist { list-style: none; padding: 0; }
+      .checklist li {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        padding: 7px 0;
+        border-bottom: 1px solid var(--line);
+        font-size: 14px;
+      }
+      .checklist li:last-child { border-bottom: none; }
+      .check-box {
+        width: 16px;
+        height: 16px;
+        border: 1.5px solid var(--muted);
+        border-radius: 3px;
+        flex-shrink: 0;
+        margin-top: 2px;
+      }
+      .check-group { margin: 24px 0; }
+      .check-group h4 {
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: .06em;
+        color: var(--muted);
+        margin: 0 0 10px;
+      }
+      .fake-plan {
+        border: 1.5px solid var(--line);
+        border-radius: 8px;
+        padding: 20px 24px;
+        background: var(--paper);
+        margin: 20px 0;
+        font-size: 13.5px;
+        line-height: 1.65;
+      }
+      .fake-plan h4 { margin: 0 0 12px; font-size: 14px; }
+      .bug-label {
+        display: inline-block;
+        background: #fee2e2;
+        color: #991b1b;
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: .04em;
+        padding: 1px 7px;
+        border-radius: 4px;
+        vertical-align: middle;
+        margin-left: 6px;
+      }
+      .reveal-list { list-style: none; padding: 0; margin: 0; }
+      .reveal-list li { margin: 10px 0; font-size: 13.5px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <article>
+        <nav class="lesson-nav no-print">
+          <a href="0009-feature-12-ui-navigation-null-states.html">← Lesson 0009</a>
+          <a href="../reference/0004-feature-12-cheat-sheet.html">Cheat Sheet</a>
+          <a href="../learning-records/">Learning Records</a>
+          <a href="../docs/plan/12-job-details-page/plan.md">Feature Plan</a>
+        </nav>
+
+        <p class="kicker">Lesson 0010</p>
+        <h1>Feature 12 — Verification Mindset and Plan Review Exercise</h1>
+        <p class="muted">
+          Goal: understand what each verification step actually proves and doesn't prove,
+          then practice reviewing a deliberately flawed plan using the Feature 12 checklist.
+          Series: Feature 12 Deep Dive (4 of 4).
+        </p>
+
+        <!-- ─────────────────────────────────────────────── -->
+        <h2>1 — What verification proves (and doesn't)</h2>
+
+        <p>Feature 12's verification steps from the plan:</p>
+        <ol>
+          <li><code>npm run build</code></li>
+          <li><code>npm run test:run</code></li>
+          <li>Manual smoke test on a real saved job</li>
+        </ol>
+
+        <p>Each step proves a different class of correctness.
+        Knowing what each one <em>cannot</em> prove is as important as knowing what it can.</p>
+
+        <table class="ref">
+          <thead>
+            <tr>
+              <th>Step</th>
+              <th>What it proves</th>
+              <th>What it does NOT prove</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>npm run build</code></td>
+              <td>TypeScript types are consistent. Next.js can compile the route and all imports resolve. No export errors.</td>
+              <td>Data is correct at runtime. Auth flow works. Null states render correctly. The params await actually runs.</td>
+            </tr>
+            <tr>
+              <td><code>npm run test:run</code></td>
+              <td>Utility functions (<code>formatRelativeDate</code>, <code>getMatchBarColor</code>) produce correct outputs. Existing functionality hasn't regressed.</td>
+              <td>Server Components render. DB queries succeed. Any Feature 12 component actually works — <strong>there are no tests for Feature 12 components</strong>.</td>
+            </tr>
+            <tr>
+              <td>Manual smoke test</td>
+              <td>The golden path works: click row → detail page loads → apply button opens URL → back button returns to list.</td>
+              <td>Edge cases: null salary, null match_reason, missing skills arrays, invalid UUID in URL, unauthorised access by another user.</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <p>The plan explicitly specifies <em>what</em> to smoke test — not just "test it works" but specific cases:</p>
+        <ul>
+          <li>Right-click → "Open in new tab" (stretched link native behaviour)</li>
+          <li>Apply Now goes to <code>external_apply_url</code>, not <code>source_url</code> (verify they differ)</li>
+          <li>Test a job missing <code>salary</code> and <code>match_reason</code> — confirm "—" and no AI card</li>
+        </ul>
+
+        <p>The <code>params</code> await is a perfect example of something the build cannot catch.
+        Forgetting to await <code>params</code> in Next.js 16 compiles cleanly.
+        The type error is silent. The only proof that it works is running the app.</p>
+
+        <div class="callout">
+          <strong>Review question to ask:</strong>
+          Does the plan's verification section specify edge cases to test?
+          "npm run build passes" is not a verification plan — it's a baseline.
+          Ask: what happens when every nullable field is null?
+          Ask: what does an unauthorised user see when they guess a valid UUID?
+        </div>
+
+        <div class="quiz">
+          <details>
+            <summary>Retrieval check: <code>npm run test:run</code> passed with 42 tests before and after Feature 12. Does this tell you whether the <code>JobInfo</code> component renders the match badge correctly when <code>match_score</code> is 68?</summary>
+            <div class="answer">
+              No. The test suite has no tests for Feature 12 components. The 42 tests cover utilities (<code>formatRelativeDate</code>, <code>getMatchBarColor</code>, <code>MATCH_THRESHOLD</code>) and probably other pre-existing features. Whether <code>matchBadgeClasses(68)</code> returns the warning-range classes can only be verified by reading <code>JobInfo.tsx</code> directly or by running the component with a job whose score is 68. Test count passing means "nothing that was working before has broken" — it says nothing about new components.
+            </div>
+          </details>
+        </div>
+
+        <!-- ─────────────────────────────────────────────── -->
+        <h2>2 — Plan review methodology: the C-E-C frame</h2>
+
+        <p>When reviewing a coding-agent plan, use the <strong>Claim → Evidence → Consequence</strong> frame for every decision in the plan:</p>
+
+        <ol>
+          <li><strong>Claim:</strong> What decision is the plan making?</li>
+          <li><strong>Evidence:</strong> What in the codebase or architecture docs supports or contradicts it?</li>
+          <li><strong>Consequence:</strong> What breaks if the plan is wrong?</li>
+        </ol>
+
+        <p>Example applied to a Feature 12 decision:</p>
+
+        <table class="ref">
+          <thead><tr><th>Frame</th><th>Applied to: "Use stretched link for row navigation"</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><strong>Claim</strong></td>
+              <td>The plan uses a CSS pseudo-element stretched link instead of <code>onClick + router.push</code></td>
+            </tr>
+            <tr>
+              <td><strong>Evidence</strong></td>
+              <td>Architecture docs say Server Components only. <code>JobsTable.tsx</code> is already <code>"use client"</code> (it has sort state). Stretched link works in client components too. Stretched link gives native browser right-click and middle-click. The plan's own watchpoint 2 identifies the browser compatibility question.</td>
+            </tr>
+            <tr>
+              <td><strong>Consequence</strong></td>
+              <td>If <code>onClick</code> were used: right-click "Open in new tab" would be absent. Screen readers couldn't navigate. The URL wouldn't be visible in the status bar on hover. Apply once — misses the standard.</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <!-- ─────────────────────────────────────────────── -->
+        <h2>3 — Plan review exercise</h2>
+
+        <p>Below is a simplified, fictional alternative plan for a Feature 12-style job detail page.
+        It has <strong>5 deliberate errors</strong>.
+        Read it carefully and identify all 5 before expanding the answer.</p>
+        <p class="muted" style="font-size:13px">Take at least 2 minutes before revealing. Write down your answers.</p>
+
+        <div class="fake-plan">
+          <h4>Fictional Plan — "Job Detail Page v2"</h4>
+
+          <p><strong>Route:</strong> <code>app/jobs/[id]/page.tsx</code> — client component</p>
+          <pre><code>"use client"
+import { useParams, useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+
+export default function JobDetailPage() {
+  const { id } = useParams(); // Next.js dynamic segment
+  const [job, setJob] = useState(null);
+
+  useEffect(() => {
+    fetch(`/api/jobs/${id}`)
+      .then(r => r.json())
+      .then(setJob);
+  }, [id]);
+
+  if (!job) return &lt;div&gt;Loading...&lt;/div&gt;;
+  return &lt;JobDetail job={job} /&gt;;
+}</code></pre>
+
+          <p><strong>Component props:</strong></p>
+          <pre><code>function JobDetail({ job }) {
+  return (
+    &lt;div className="bg-white rounded-2xl p-6 border border-gray-200"&gt;
+      &lt;h1 className="text-xl font-semibold text-gray-900"&gt;{job.title}&lt;/h1&gt;
+      &lt;p className="text-gray-600"&gt;{job.company}&lt;/p&gt;
+      &lt;p className="text-gray-600"&gt;{job.job_type ?? "Full-time"}&lt;/p&gt;
+      &lt;p className="text-gray-600"&gt;{job.about_role}&lt;/p&gt;
+      &lt;a href={job.external_apply_url}&gt;Apply Now&lt;/a&gt;
+    &lt;/div&gt;
+  );
+}</code></pre>
+
+          <p><strong>API route:</strong> <code>app/api/jobs/[id]/route.ts</code> — fetches by ID only</p>
+          <pre><code>export async function GET(req, { params }) {
+  const { id } = params; // Next.js 16
+  const insforge = await createInsforgeServer();
+  const { data: job } = await insforge.database
+    .from("jobs")
+    .select("*")
+    .eq("id", id)
+    .single();
+  return Response.json(job);
+}</code></pre>
+
+          <p><strong>Table row navigation:</strong></p>
+          <pre><code>&lt;tr onClick={() =&gt; router.push(`/jobs/${id}`)}&gt;</code></pre>
+        </div>
+
+        <div class="quiz">
+          <details>
+            <summary>Reveal: the 5 errors and why each matters</summary>
+            <div class="answer">
+              <ul class="reveal-list">
+                <li>
+                  <strong>Error 1 — Client Component with <code>useEffect</code> for data fetching.</strong>
+                  The plan uses <code>"use client"</code> and fetches via <code>useEffect</code>.
+                  This shows a loading spinner on every navigation (poor UX) and leaks the fetch path to the browser.
+                  Auth is handled by the API route — but now there's a whole extra roundtrip.
+                  A Server Component does this in one server-side call with no loading state.
+                  <em>Consequence:</em> performance regression, extra complexity, security concern if the API route doesn't validate <code>user_id</code>.
+                </li>
+                <li>
+                  <strong>Error 2 — API route query has no <code>user_id</code> filter.</strong>
+                  The API route queries <code>.eq("id", id)</code> only.
+                  Any authenticated user can read any other user's job by guessing the UUID.
+                  The plan omits the security boundary.
+                  <em>Consequence:</em> broken authorisation — all user data is exposed to all authenticated users.
+                </li>
+                <li>
+                  <strong>Error 3 — <code>params</code> in the API route is not awaited.</strong>
+                  The API route uses <code>const { id } = params</code> (sync pattern).
+                  In Next.js 16, <code>params</code> is a Promise — it must be <code>await params</code>.
+                  Without the await, <code>id</code> is <code>undefined</code>, the query returns nothing, and the client shows a loading spinner forever.
+                  <em>Consequence:</em> universal silent failure — no error, just an infinite loading state.
+                </li>
+                <li>
+                  <strong>Error 4 — Raw Tailwind color classes and hex values.</strong>
+                  The <code>JobDetail</code> component uses <code>bg-white</code>, <code>text-gray-900</code>, <code>text-gray-600</code>, <code>border-gray-200</code>.
+                  These are raw Tailwind colors, not project tokens.
+                  The project rule is: only use token classes (<code>bg-surface</code>, <code>text-text-primary</code>, <code>text-text-secondary</code>, <code>border-border</code>).
+                  <em>Consequence:</em> design system drift — this component won't match the rest of the app and will look inconsistent, especially in dark mode or when tokens change.
+                </li>
+                <li>
+                  <strong>Error 5 — <code>job_type ?? "Full-time"</code> invents a default.</strong>
+                  The plan renders <code>job.job_type ?? "Full-time"</code>.
+                  Null means unknown, not full-time.
+                  Showing "Full-time" when the field is null misleads the user.
+                  The correct rule (from <code>formatJobType</code>): null → "—".
+                  <em>Consequence:</em> misinformation — a user might decline a part-time role or apply to a contract role expecting full-time hours, all because of a fabricated default.
+                </li>
+              </ul>
+              <p style="margin-top:16px;font-size:13px;color:var(--muted)">
+                Bonus catch: <code>&lt;a href={job.external_apply_url}&gt;</code> with no null check.
+                If <code>external_apply_url</code> is null, the rendered href is "null" (the string).
+                The plan should use <code>externalApplyUrl ?? sourceUrl</code> and handle the both-null case with a disabled button.
+              </p>
+            </div>
+          </details>
+        </div>
+
+        <!-- ─────────────────────────────────────────────── -->
+        <h2>4 — Reusable review checklist for any job details-style feature</h2>
+
+        <p class="muted" style="font-size:13px">Print this page or open the <a href="../reference/0004-feature-12-cheat-sheet.html">cheat sheet</a> for a condensed version.</p>
+
+        <div class="check-group">
+          <h4>Route and data flow</h4>
+          <ul class="checklist">
+            <li><span class="check-box"></span><span>Is the page a Server Component? (no <code>"use client"</code>)</span></li>
+            <li><span class="check-box"></span><span>Is <code>force-dynamic</code> set? (required for auth-gated, per-user pages)</span></li>
+            <li><span class="check-box"></span><span>Are <code>params</code> awaited? (Next.js 16: <code>const { id } = await params</code>)</span></li>
+            <li><span class="check-box"></span><span>Is the query scoped to both <code>id</code> AND <code>user_id</code>?</span></li>
+            <li><span class="check-box"></span><span>Does it <code>notFound()</code> for missing records (not 403)?</span></li>
+            <li><span class="check-box"></span><span>Does it <code>redirect("/login")</code> for unauthenticated access?</span></li>
+          </ul>
+        </div>
+
+        <div class="check-group">
+          <h4>Design system</h4>
+          <ul class="checklist">
+            <li><span class="check-box"></span><span>Are all colors project token classes? (no <code>bg-white</code>, <code>text-gray-*</code>, hex values)</span></li>
+            <li><span class="check-box"></span><span>Do card border radii follow the registry? (main: <code>rounded-2xl</code>, sub: <code>rounded-xl</code>)</span></li>
+            <li><span class="check-box"></span><span>Are buttons using token classes (<code>bg-accent text-accent-foreground</code>)?</span></li>
+          </ul>
+        </div>
+
+        <div class="check-group">
+          <h4>Null and empty states</h4>
+          <ul class="checklist">
+            <li><span class="check-box"></span><span>Is <code>job_type: null</code> shown as "—" (not "Full-time")?</span></li>
+            <li><span class="check-box"></span><span>Is <code>salary: null</code> shown as "—"?</span></li>
+            <li><span class="check-box"></span><span>Is <code>match_score: null</code> badge hidden entirely?</span></li>
+            <li><span class="check-box"></span><span>Is <code>match_reason: null</code> card hidden entirely?</span></li>
+            <li><span class="check-box"></span><span>Are empty skill arrays handled with a message?</span></li>
+            <li><span class="check-box"></span><span>Does Apply Now fall back to <code>source_url</code> when <code>external_apply_url</code> is null?</span></li>
+            <li><span class="check-box"></span><span>Is Apply Now disabled (not broken) when both URLs are null?</span></li>
+            <li><span class="check-box"></span><span>Does <code>about_role: null</code> show a message (not render empty)?</span></li>
+            <li><span class="check-box"></span><span>Does scraped text use <code>whitespace-pre-line</code>?</span></li>
+          </ul>
+        </div>
+
+        <div class="check-group">
+          <h4>Navigation</h4>
+          <ul class="checklist">
+            <li><span class="check-box"></span><span>Does row navigation use a stretched <code>&lt;Link&gt;</code> (not <code>onClick</code>)?</span></li>
+            <li><span class="check-box"></span><span>Does the <code>&lt;tr&gt;</code> have <code>relative</code>?</span></li>
+            <li><span class="check-box"></span><span>Does the <code>&lt;Link&gt;</code> have <code>after:absolute after:inset-0 after:content-[''] after:z-1</code>?</span></li>
+            <li><span class="check-box"></span><span>Does the stretched link have an <code>aria-label</code>?</span></li>
+            <li><span class="check-box"></span><span>Do external links have <code>target="_blank" rel="noopener noreferrer"</code>?</span></li>
+          </ul>
+        </div>
+
+        <div class="check-group">
+          <h4>Component architecture</h4>
+          <ul class="checklist">
+            <li><span class="check-box"></span><span>Are components in the path defined by <code>architecture.md</code>?</span></li>
+            <li><span class="check-box"></span><span>Are Server Components used (no unnecessary <code>"use client"</code>)?</span></li>
+            <li><span class="check-box"></span><span>Is scope respected — no unplanned agents, mutations, or events?</span></li>
+            <li><span class="check-box"></span><span>Does the plan account for future change boundaries (e.g., which component will change next)?</span></li>
+          </ul>
+        </div>
+
+        <div class="check-group">
+          <h4>Verification</h4>
+          <ul class="checklist">
+            <li><span class="check-box"></span><span>Does the plan specify <code>npm run build</code> and <code>npm run test:run</code>?</span></li>
+            <li><span class="check-box"></span><span>Does the smoke test include null-field cases (not just golden path)?</span></li>
+            <li><span class="check-box"></span><span>Does it verify right-click "Open in new tab" on the stretched link?</span></li>
+            <li><span class="check-box"></span><span>Does it verify Apply Now goes to <code>external_apply_url</code>, not <code>source_url</code>?</span></li>
+          </ul>
+        </div>
+
+        <!-- ─────────────────────────────────────────────── -->
+        <h2>Summary</h2>
+
+        <ul>
+          <li>Build proves type safety. Tests prove utility functions and non-regression. Smoke tests prove golden path. None of them prove edge cases.</li>
+          <li>Use C-E-C (Claim → Evidence → Consequence) to evaluate each plan decision: what did the plan decide, what evidence supports or contradicts it, what breaks if it's wrong?</li>
+          <li>The 5 errors in the fake plan map to 5 recurring failure modes: client-side data fetching, missing <code>user_id</code> filter, missing <code>params</code> await, raw Tailwind colors, null treated as a default value.</li>
+          <li>The review checklist covers every major decision area in Feature 12. Reuse it for any page-level feature that follows the same Server Component + per-user data + external links pattern.</li>
+        </ul>
+
+        <p class="muted" style="font-size:13px;margin-top:32px">
+          Series complete. Review all four lessons:<br>
+          <a href="0007-feature-12-overview-route-data-flow.html">0007 — Overview and Route</a> ·
+          <a href="0008-feature-12-type-contract-components.html">0008 — Type Contract and Components</a> ·
+          <a href="0009-feature-12-ui-navigation-null-states.html">0009 — UI Decisions and Null States</a> ·
+          <a href="0010-feature-12-verification-plan-review.html">0010 — Verification and Plan Review</a><br>
+          Reference: <a href="../reference/0004-feature-12-cheat-sheet.html">Feature 12 Cheat Sheet</a>
+        </p>
+      </article>
+    </main>
+  </body>
+</html>

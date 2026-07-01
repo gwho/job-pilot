@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Reference 0004 — Feature 12 Cheat Sheet</title>
+    <link rel="stylesheet" href="../assets/course.css" />
+    <style>
+      @media print {
+        nav.lesson-nav { display: none; }
+        body { font-size: 12px; }
+        h2 { page-break-before: auto; }
+      }
+      .two-col {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 18px;
+        margin: 16px 0;
+      }
+      @media (max-width: 680px) { .two-col { grid-template-columns: 1fr; } }
+      .mini-card {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 14px;
+        background: var(--paper);
+      }
+      .mini-card h4 {
+        margin: 0 0 8px;
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: .06em;
+        color: var(--muted);
+      }
+      .mini-card pre { margin: 0; }
+      .checklist { list-style: none; padding: 0; margin: 0; }
+      .checklist li {
+        display: flex;
+        gap: 8px;
+        padding: 5px 0;
+        font-size: 13px;
+        border-bottom: 1px solid var(--line);
+      }
+      .checklist li:last-child { border-bottom: none; }
+      .cb {
+        width: 14px;
+        height: 14px;
+        border: 1.5px solid var(--muted);
+        border-radius: 2px;
+        flex-shrink: 0;
+        margin-top: 2px;
+      }
+      .tag {
+        display: inline-block;
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 4px;
+        font-size: 11px;
+        font-weight: 600;
+        padding: 1px 6px;
+        color: var(--muted);
+        vertical-align: middle;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <article>
+        <nav class="lesson-nav no-print">
+          <a href="../lessons/0007-feature-12-overview-route-data-flow.html">Lesson 0007</a>
+          <a href="../lessons/0008-feature-12-type-contract-components.html">Lesson 0008</a>
+          <a href="../lessons/0009-feature-12-ui-navigation-null-states.html">Lesson 0009</a>
+          <a href="../lessons/0010-feature-12-verification-plan-review.html">Lesson 0010</a>
+          <a href="../docs/plan/12-job-details-page/plan.md">Plan</a>
+        </nav>
+
+        <p class="kicker">Reference 0004</p>
+        <h1>Feature 12 — Job Details Page Cheat Sheet</h1>
+        <p class="muted" style="font-size:13px">
+          Quick reference for reviewing any Server Component detail page feature.
+          Print with Ctrl/Cmd+P — nav bar hidden in print mode.
+        </p>
+
+        <!-- ─── DATA FLOW ─── -->
+        <h2>Server data flow</h2>
+
+        <pre style="font-size:13px"><code>export const dynamic = "force-dynamic";   // required on per-user auth-gated pages
+
+export default async function Page({
+  params,
+}: {
+  params: Promise&lt;{ id: string }&gt;;         // Next.js 16: Promise, not plain object
+}) {
+  const { id } = await params;             // must await — TypeScript won't catch missing await
+  const insforge = await createInsforgeServer();
+
+  const { data: authData } = await insforge.auth.getCurrentUser();
+  if (!authData?.user) redirect("/login");
+
+  const { data: job, error } = await insforge.database
+    .from("jobs")
+    .select("*")
+    .eq("id", id)                          // filter by UUID
+    .eq("user_id", authData.user.id)       // BOTH filters required — security boundary
+    .single();
+
+  if (error || !job) notFound();           // 404 not 403 — never reveal existence of other users' records
+  const typedJob = job as Job;             // safe: select("*") matches Job interface
+}</code></pre>
+
+        <!-- ─── NULL RULES ─── -->
+        <h2>Null-handling rules (complete)</h2>
+
+        <table class="ref" style="font-size:13px">
+          <thead><tr><th>Field</th><th>Type</th><th>Rule</th><th>Component</th></tr></thead>
+          <tbody>
+            <tr><td>match_score</td><td>number | null</td><td>null → <strong>hide badge entirely</strong></td><td>JobInfo.tsx</td></tr>
+            <tr><td>source_url</td><td>string | null</td><td>null → <strong>hide View Job Post button</strong></td><td>JobInfo.tsx</td></tr>
+            <tr><td>match_reason</td><td>string | null</td><td>null → <strong>hide AI Reasoning card</strong></td><td>MatchScore.tsx</td></tr>
+            <tr><td>matched_skills</td><td>string[] | null</td><td>null/empty → <strong>hide "You have" section</strong></td><td>MatchScore.tsx</td></tr>
+            <tr><td>missing_skills</td><td>string[] | null</td><td>null/empty → <strong>hide "Gap skills" section</strong></td><td>MatchScore.tsx</td></tr>
+            <tr><td>both skills null</td><td>—</td><td>→ <strong>"No skill data available."</strong></td><td>MatchScore.tsx</td></tr>
+            <tr><td>about_role</td><td>string | null</td><td>null → <strong>"No description available."</strong></td><td>JobDescription.tsx</td></tr>
+            <tr><td>salary</td><td>string | null</td><td>null → <strong>"—"</strong> (preserve card layout)</td><td>JobInfo.tsx</td></tr>
+            <tr><td>location</td><td>string | null</td><td>null → <strong>"—"</strong></td><td>JobInfo.tsx</td></tr>
+            <tr><td>job_type</td><td>JobType | null</td><td>null → <strong>"—"</strong> — NEVER "Full-time"</td><td>JobInfo.tsx</td></tr>
+            <tr><td>external_apply_url</td><td>string | null</td><td>null → fall back to source_url</td><td>JobActions.tsx</td></tr>
+            <tr><td>both URLs null</td><td>—</td><td>→ <strong>disabled button</strong></td><td>JobActions.tsx</td></tr>
+          </tbody>
+        </table>
+
+        <!-- ─── STRETCHED LINK ─── -->
+        <h2>Stretched link pattern</h2>
+
+        <div class="two-col">
+          <div class="mini-card">
+            <h4>Table row (JobsTable.tsx)</h4>
+            <pre><code>&lt;tr className="relative ..."&gt;
+  &lt;td&gt;
+    &lt;Link
+      href={`/find-jobs/${job.id}`}
+      className="... after:absolute
+        after:inset-0
+        after:content-['']
+        after:z-1"
+      aria-label={`View ${job.title}
+        at ${job.company}`}
+    &gt;
+      {job.company}
+    &lt;/Link&gt;
+  &lt;/td&gt;
+  {/* other cells — covered by ::after */}
+&lt;/tr&gt;</code></pre>
+          </div>
+          <div class="mini-card">
+            <h4>Why (not onClick)</h4>
+            <ul style="font-size:13px;padding:0 0 0 16px;margin:0;line-height:2">
+              <li>Real <code>&lt;a&gt;</code> → right-click works</li>
+              <li>Middle-click → new tab</li>
+              <li>Hover → URL in status bar</li>
+              <li>Screen reader → announced as link</li>
+              <li>No <code>"use client"</code> needed</li>
+              <li><code>after:z-1</code> → wins stacking order over other cell content</li>
+            </ul>
+          </div>
+        </div>
+
+        <!-- ─── URL TYPES ─── -->
+        <h2>source_url vs external_apply_url</h2>
+
+        <table class="ref" style="font-size:13px">
+          <thead><tr><th>Field</th><th>Points to</th><th>Button</th></tr></thead>
+          <tbody>
+            <tr><td>source_url</td><td>JobsDB listing page (aggregator)</td><td>View Job Post</td></tr>
+            <tr><td>external_apply_url</td><td>Employer's ATS / careers portal</td><td>Apply Now</td></tr>
+          </tbody>
+        </table>
+
+        <pre style="font-size:13px;margin-top:8px"><code>// JobActions.tsx
+const applyHref = externalApplyUrl ?? sourceUrl; // Adzuna jobs may lack external URL</code></pre>
+
+        <!-- ─── COMPONENT MAP ─── -->
+        <h2>Five-component decomposition</h2>
+
+        <table class="ref" style="font-size:13px">
+          <thead><tr><th>Component</th><th>Owns</th><th>Future change</th></tr></thead>
+          <tbody>
+            <tr><td>JobInfo</td><td>Header + 4-col info row + match badge + View Job Post</td><td>None planned</td></tr>
+            <tr><td>MatchScore</td><td>AI reasoning card + skills card</td><td>None planned</td></tr>
+            <tr><td>JobDescription</td><td>Full scraped description with <code>whitespace-pre-line</code></td><td>None planned</td></tr>
+            <tr><td>CompanyResearch</td><td>Empty state + disabled button</td><td><strong>F13</strong>: becomes Client Component with onClick</td></tr>
+            <tr><td>JobActions</td><td>Apply Now button logic</td><td>None planned</td></tr>
+          </tbody>
+        </table>
+
+        <!-- ─── REVIEW CHECKLIST ─── -->
+        <h2>Plan review checklist <span class="tag">print</span></h2>
+
+        <div class="two-col">
+          <div>
+            <p style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:0 0 6px">Route &amp; data</p>
+            <ul class="checklist">
+              <li><span class="cb"></span>Server Component (no <code>"use client"</code>)</li>
+              <li><span class="cb"></span><code>force-dynamic</code> present</li>
+              <li><span class="cb"></span><code>await params</code> (not sync read)</li>
+              <li><span class="cb"></span>Two-filter query: <code>id</code> + <code>user_id</code></li>
+              <li><span class="cb"></span><code>notFound()</code> for missing/unauthorised</li>
+              <li><span class="cb"></span><code>redirect("/login")</code> if no session</li>
+            </ul>
+
+            <p style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:16px 0 6px">Design system</p>
+            <ul class="checklist">
+              <li><span class="cb"></span>Token classes only — no raw Tailwind colors</li>
+              <li><span class="cb"></span>Card radii match registry</li>
+              <li><span class="cb"></span>No hex values</li>
+            </ul>
+
+            <p style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:16px 0 6px">Navigation</p>
+            <ul class="checklist">
+              <li><span class="cb"></span>Stretched <code>&lt;Link&gt;</code> (not <code>onClick</code>)</li>
+              <li><span class="cb"></span><code>&lt;tr&gt;</code> has <code>relative</code></li>
+              <li><span class="cb"></span><code>after:absolute after:inset-0 after:content-[''] after:z-1</code></li>
+              <li><span class="cb"></span><code>aria-label</code> present</li>
+              <li><span class="cb"></span>External links: <code>target="_blank" rel="noopener noreferrer"</code></li>
+            </ul>
+          </div>
+          <div>
+            <p style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:0 0 6px">Null states</p>
+            <ul class="checklist">
+              <li><span class="cb"></span><code>job_type: null</code> → "—" not "Full-time"</li>
+              <li><span class="cb"></span><code>salary: null</code> → "—"</li>
+              <li><span class="cb"></span><code>match_score: null</code> → hide badge</li>
+              <li><span class="cb"></span><code>match_reason: null</code> → hide card</li>
+              <li><span class="cb"></span>Empty skills → message</li>
+              <li><span class="cb"></span>Apply URL null → disabled button</li>
+              <li><span class="cb"></span><code>about_role: null</code> → message</li>
+              <li><span class="cb"></span>Scraped text → <code>whitespace-pre-line</code></li>
+            </ul>
+
+            <p style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:16px 0 6px">Architecture</p>
+            <ul class="checklist">
+              <li><span class="cb"></span>Components path from <code>architecture.md</code></li>
+              <li><span class="cb"></span>No unnecessary client components</li>
+              <li><span class="cb"></span>Scope respected (no unplanned agents/mutations/events)</li>
+              <li><span class="cb"></span>Future change boundaries identified</li>
+            </ul>
+
+            <p style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:16px 0 6px">Verification</p>
+            <ul class="checklist">
+              <li><span class="cb"></span><code>npm run build</code> + <code>npm run test:run</code></li>
+              <li><span class="cb"></span>Smoke test: null-field cases</li>
+              <li><span class="cb"></span>Smoke test: right-click row</li>
+              <li><span class="cb"></span>Smoke test: Apply goes to <code>external_apply_url</code></li>
+            </ul>
+          </div>
+        </div>
+
+        <!-- ─── KEY HELPERS ─── -->
+        <h2>Key helpers to know</h2>
+
+        <div class="two-col">
+          <div class="mini-card">
+            <h4>formatJobType (JobInfo.tsx)</h4>
+            <pre><code>function formatJobType(t: string | null) {
+  if (t === "fulltime") return "Full-time";
+  if (t === "parttime") return "Part-time";
+  if (t === "contract") return "Contract";
+  return "—"; // null → "—", never a default
+}</code></pre>
+          </div>
+          <div class="mini-card">
+            <h4>matchBadgeClasses (JobInfo.tsx)</h4>
+            <pre><code>function matchBadgeClasses(score: number) {
+  if (score >= 70)
+    return "bg-success-lightest text-success-dark";
+  if (score >= 50)
+    return "bg-warning-light text-warning";
+  return "bg-surface-tertiary text-text-muted";
+}
+// returns FULL class strings for Tailwind scanner</code></pre>
+          </div>
+        </div>
+
+        <p class="muted" style="font-size:12px;margin-top:24px">
+          Lessons: <a href="../lessons/0007-feature-12-overview-route-data-flow.html">0007</a> ·
+          <a href="../lessons/0008-feature-12-type-contract-components.html">0008</a> ·
+          <a href="../lessons/0009-feature-12-ui-navigation-null-states.html">0009</a> ·
+          <a href="../lessons/0010-feature-12-verification-plan-review.html">0010</a> |
+          Plan: <a href="../docs/plan/12-job-details-page/plan.md">docs/plan/12-job-details-page/plan.md</a>
+        </p>
+      </article>
+    </main>
+  </body>
+</html>

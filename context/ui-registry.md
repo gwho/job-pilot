@@ -427,18 +427,19 @@ Purely presentational — no state. Receives `filterText`, `matchFilter`, `sort`
 ### JobsTable
 
 File: `components/find-jobs/JobsTable.tsx`
-Last updated: 2026-06-29 (Feature 11)
+Last updated: 2026-07-01 (Feature 12 — stretched link navigation)
 
 | Property        | Class / Value |
 | --------------- | ------------- |
 | Table header    | `text-xs font-medium text-text-secondary uppercase tracking-wide` (per `<th>`, `px-6 py-3`) |
-| Table row       | `border-t border-border hover:bg-surface-secondary transition-colors cursor-pointer` |
+| Table row       | `relative border-t border-border hover:bg-surface-secondary transition-colors` |
+| Stretched link  | `text-sm font-semibold text-text-primary after:absolute after:inset-0 after:content-['']` |
 | Company logo    | `w-8 h-8 bg-surface-tertiary border border-border rounded-md flex items-center justify-center shrink-0` |
 | Match bar track | `w-24 h-1 bg-border-light rounded-full overflow-hidden` |
 | Match bar fill  | inline `style={{ width: \`${score}%\`, backgroundColor: getMatchBarColor(score) }}` |
 
 **Pattern notes:**
-Purely presentational — receives `jobs: Job[]` (already-filtered page slice) and `hasNoHistory: boolean` from `FindJobsClient`. No state, no filtering logic. Two empty states: `hasNoHistory` true → "Run a search above to find your first jobs."; false (filters active, no matches) → "No jobs match your filters." Score cell: `job.match_score != null ? <MatchScoreBar /> : <span>—</span>` — unscored jobs show `—`, never `0%`. Provider column (`source_provider ?? "—"`) positioned after Match Score. `MatchScoreBar` is a module-level sub-component. `getMatchBarColor` and `formatRelativeDate` imported from `lib/utils.ts`. Bar fill uses inline `style` (not Tailwind) because color is dynamic. 6 columns total: Company, Role, Match Score, Salary Est., Provider, Date Found.
+Purely presentational — receives `jobs: Job[]` (already-filtered page slice) and `hasNoHistory: boolean` from `FindJobsClient`. No state, no filtering logic. Two empty states: `hasNoHistory` true → "Run a search above to find your first jobs."; false (filters active, no matches) → "No jobs match your filters." Score cell: `job.match_score != null ? <MatchScoreBar /> : <span>—</span>` — unscored jobs show `—`, never `0%`. Provider column (`source_provider ?? "—"`) positioned after Match Score. Row navigation via **stretched link pattern**: `<tr>` gets `relative`, the company-name cell wraps text in `<Link>` with `after:absolute after:inset-0 after:content-['']` — the `::after` pseudo-element covers the entire row. This gives native browser link behavior (open-in-new-tab, keyboard navigation) without `useRouter` or `onClick`. `MatchScoreBar` is a module-level sub-component. `getMatchBarColor` and `formatRelativeDate` imported from `lib/utils.ts`. Bar fill uses inline `style` (not Tailwind) because color is dynamic. 6 columns total: Company, Role, Match Score, Salary Est., Provider, Date Found.
 
 ---
 
@@ -456,6 +457,95 @@ Last updated: 2026-06-25
 
 **Pattern notes:**
 Purely presentational — receives `page`, `totalPages`, `totalCount`, `startIdx`, `pageNumbers`, `pageSize`, `onPageChange` from `FindJobsClient`. `pageSize` is the single source of truth for the "Showing X to Y" upper bound — do not add a local `PAGE_SIZE` constant. Renders ellipsis-compressed page number buttons and Previous/Next. Page numbers use windowed logic (computed in `FindJobsClient`): always shows first, last, current ± 1 neighbour, ellipsis fills gaps — never shows a page list where the current page is absent. Last updated: Feature 11.
+
+---
+
+### JobInfo
+
+File: `components/job-details/JobInfo.tsx`
+Last updated: 2026-07-01 (Feature 12)
+
+| Property         | Class / Value |
+| ---------------- | ------------- |
+| Header card      | `bg-surface border border-border rounded-2xl p-6 shadow-sm` |
+| Logo placeholder | `w-10 h-10 bg-surface-tertiary border border-border rounded-lg flex items-center justify-center shrink-0` |
+| Job title        | `text-xl font-semibold text-text-primary` |
+| Company line     | `flex items-center gap-2 mt-1` |
+| Match badge ≥70  | `bg-success-lightest text-success-dark text-xs font-medium px-2.5 py-1 rounded-full` |
+| Match badge 50–69 | `bg-warning-light text-warning text-xs font-medium px-2.5 py-1 rounded-full` |
+| Match badge <50  | `bg-surface-tertiary text-text-muted text-xs font-medium px-2.5 py-1 rounded-full` |
+| View Job Post    | `inline-flex items-center gap-2 bg-surface border border-border text-text-primary text-sm font-medium rounded-md px-4 py-2 hover:bg-surface-secondary transition-colors shrink-0` |
+| Info cards grid  | `grid grid-cols-4 gap-4` |
+| Info card        | `bg-surface border border-border rounded-xl p-4 shadow-sm flex items-center gap-3` |
+| Info icon wrap   | `w-8 h-8 rounded-lg flex items-center justify-center shrink-0` |
+| Info value       | `text-sm font-semibold text-text-primary` |
+| Info label       | `text-xs font-medium text-text-secondary uppercase tracking-wide mt-0.5` |
+
+**Pattern notes:**
+Renders two blocks: the header card (logo + title + company + match badge + View Job Post button) and a 4-column info cards row (Salary, Location, Job Type, Date Found). Match badge only renders when `job.match_score != null`. View Job Post only renders when `job.source_url` is non-null. Info card icon bg tokens: salary `bg-success-lightest` / `text-success`, location `bg-info-lightest` / `text-info`, job type `bg-accent-muted` / `text-accent`, date `bg-info-lightest` / `text-info-medium`. `formatJobType` returns "—" for null — never invents "Full-time" for null. Info cards use `rounded-xl` (not `rounded-2xl`) — they are sub-cards inside the page layout. `formatRelativeDate` from `@/lib/utils`.
+
+---
+
+### MatchScore
+
+File: `components/job-details/MatchScore.tsx`
+Last updated: 2026-07-01 (Feature 12)
+
+| Property             | Class / Value |
+| -------------------- | ------------- |
+| Matched skill badge  | `inline-flex items-center gap-1 bg-success-lightest text-success-dark text-xs font-medium px-2.5 py-1 rounded-full` |
+| Gap skill badge      | `inline-flex items-center gap-1 bg-warning-light text-warning text-xs font-medium px-2.5 py-1 rounded-full` |
+| Section header       | `text-xs font-medium text-text-secondary uppercase tracking-wide` |
+| Subsection label     | `text-xs font-medium text-text-muted mb-2` |
+
+**Pattern notes:**
+Renders two cards: "AI Match Reasoning" (conditional on `job.match_reason` being non-null and non-empty) and "Required Skills vs Your Profile" (always rendered). AI card header uses `<Sparkles size={16} className="text-success" />`. Matched skills have `<Check size={11} strokeWidth={2.5} />` prefix; gap skills have `<X size={11} strokeWidth={2.5} />` prefix. "Gap skills" subsection gets `mt-4` only when both sections render. Both arrays null/empty → shows "No skill data available." instead of empty subsections.
+
+---
+
+### JobDescription
+
+File: `components/job-details/JobDescription.tsx`
+Last updated: 2026-07-01 (Feature 12)
+
+| Property | Class / Value |
+| -------- | ------------- |
+| Card     | `bg-surface border border-border rounded-2xl p-6 shadow-sm` |
+| Body     | `text-sm text-text-primary leading-relaxed whitespace-pre-line` |
+
+**Pattern notes:**
+`whitespace-pre-line` is required — JobsDB descriptions are raw `innerText` scrapes with `\n` line breaks. Null `about_role` shows "No description available." Header uses `<FileText size={16} className="text-text-secondary" />` + `text-base font-semibold text-text-primary`.
+
+---
+
+### CompanyResearch
+
+File: `components/job-details/CompanyResearch.tsx`
+Last updated: 2026-07-01 (Feature 12 — empty state only)
+
+| Property           | Class / Value |
+| ------------------ | ------------- |
+| Card               | `bg-surface border border-border rounded-2xl p-6 shadow-sm` |
+| Header row         | `flex items-center justify-between mb-6` |
+| Research button    | `inline-flex items-center gap-2 bg-accent text-accent-foreground text-sm font-medium rounded-md px-4 py-2 opacity-50 cursor-not-allowed` (disabled in Feature 12) |
+
+**Pattern notes:**
+Feature 12: always shows empty state (`company_research` is null for all current jobs). Feature 13 will upgrade this to a Client Component with the `onClick` handler wired to `/api/agent/research`. Empty state icon is `<Building2 size={32} className="text-text-muted" />`. "Research Company" button is `disabled` — not just visually inert — so it provides correct cursor and keyboard behavior. Button will be removed/replaced in Feature 13.
+
+---
+
+### JobActions
+
+File: `components/job-details/JobActions.tsx`
+Last updated: 2026-07-01 (Feature 12)
+
+| Property       | Class / Value |
+| -------------- | ------------- |
+| Apply button   | `flex items-center justify-center w-full bg-accent text-accent-foreground text-sm font-medium rounded-md px-4 py-3 hover:bg-accent-dark transition-colors` |
+| Disabled state | `opacity-50 cursor-not-allowed` (added when both URLs null) |
+
+**Pattern notes:**
+Apply href = `externalApplyUrl ?? sourceUrl`. For JobsDB jobs, `externalApplyUrl` is the company's direct apply link (careers portal) scraped from the apply button on the detail page — not the listing URL. This matters: `source_url` is the JobsDB listing; `external_apply_url` is where the candidate actually submits their application. For future Adzuna jobs where `external_apply_url` may be null, falls back to `source_url`. Full-width `py-3` is one step taller than standard `py-2` buttons — reserved for final-action CTAs.
 
 ---
 

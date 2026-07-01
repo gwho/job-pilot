@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { Building2 } from "lucide-react";
 
 import { getMatchBarColor, formatRelativeDate } from "@/lib/utils";
@@ -65,16 +66,21 @@ export function JobsTable({ jobs, hasNoHistory }: Props) {
           jobs.map((job) => (
             <tr
               key={job.id}
-              className="border-t border-border hover:bg-surface-secondary transition-colors cursor-pointer"
+              className="relative border-t border-border hover:bg-surface-secondary transition-colors"
             >
               <td className="px-6 py-4">
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 bg-surface-tertiary border border-border rounded-md flex items-center justify-center shrink-0">
                     <Building2 size={16} className="text-text-muted" />
                   </div>
-                  <span className="text-sm font-semibold text-text-primary">
+                  {/* stretched link — ::after pseudo-element covers the entire row */}
+                  <Link
+                    href={`/find-jobs/${job.id}`}
+                    className="text-sm font-semibold text-text-primary after:absolute after:inset-0 after:content-[''] after:z-1"
+                    aria-label={`View ${job.title ?? "job"} at ${job.company ?? "company"}`}
+                  >
                     {job.company ?? "—"}
-                  </span>
+                  </Link>
                 </div>
               </td>
               <td className="px-6 py-4 text-sm text-text-primary">
