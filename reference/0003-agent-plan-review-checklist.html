@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Reference 0003 - Agent Plan Review Checklist</title>
+    <link rel="stylesheet" href="../assets/course.css" />
+  </head>
+  <body>
+    <main>
+      <article>
+        <nav class="lesson-nav no-print">
+          <a href="../lessons/0006-reviewing-coding-agent-plans.html">Lesson 0006</a>
+          <a href="../context/code-standards.md">Code Standards</a>
+          <a href="../context/architecture.md">Architecture</a>
+          <a href="../context/progress-tracker.md">Progress Tracker</a>
+        </nav>
+
+        <p class="kicker">Reference 0003</p>
+        <h1>Agent Plan Review Checklist</h1>
+        <p class="muted">Use this before approving a coding agent plan. Each question turns an opinion into something you can verify.</p>
+
+        <table class="ref">
+          <thead>
+            <tr>
+              <th>Review lens</th>
+              <th>Question to ask</th>
+              <th>Evidence to inspect</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Scope</td>
+              <td>Does the plan build only this feature, or does it sneak in later features?</td>
+              <td><code>context/build-plan.md</code>, <code>context/progress-tracker.md</code></td>
+            </tr>
+            <tr>
+              <td>Architecture</td>
+              <td>Does each file do work that belongs in its folder?</td>
+              <td><code>context/architecture.md</code>, proposed file list</td>
+            </tr>
+            <tr>
+              <td>Data ownership</td>
+              <td>Are reads user-scoped and are mutations avoided unless required?</td>
+              <td>DB query clauses, route/page code, feature scope</td>
+            </tr>
+            <tr>
+              <td>Contracts</td>
+              <td>Does the plan match real nullable fields and real type names?</td>
+              <td><code>types/index.ts</code>, existing API responses</td>
+            </tr>
+            <tr>
+              <td>User behavior</td>
+              <td>Will the interaction work for keyboard, browser history, and new-tab behavior?</td>
+              <td>Navigation method, links, buttons, accessibility attributes</td>
+            </tr>
+            <tr>
+              <td>UI consistency</td>
+              <td>Does the plan reuse tokens and existing visual patterns?</td>
+              <td><code>context/ui-tokens.md</code>, <code>context/ui-registry.md</code></td>
+            </tr>
+            <tr>
+              <td>Null handling</td>
+              <td>Does every nullable field have an explicit display rule?</td>
+              <td><code>Job</code> type, plan edge-case table</td>
+            </tr>
+            <tr>
+              <td>Verification</td>
+              <td>Would the proposed tests/smoke checks catch the likely regressions?</td>
+              <td>Test commands, manual checks, existing tests</td>
+            </tr>
+            <tr>
+              <td>Internal consistency</td>
+              <td>Does any later step contradict an earlier decision?</td>
+              <td>Read plan end-to-end, compare examples to rules</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="callout">
+          <strong>Review formula:</strong> opinion = claim + evidence + consequence.
+          If one of those three is missing, ask the coding agent to make it explicit.
+        </div>
+      </article>
+    </main>
+  </body>
+</html>

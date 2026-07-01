@@ -42,6 +42,13 @@
 - [Testing Library docs](https://testing-library.com/docs/)
   Use for: testing React components (beyond pure utility functions).
 
+## Code Review and Plan Review
+
+- [Google Engineering Practices: What to look for in a code review](https://google.github.io/eng-practices/review/reviewer/looking-for.html)
+  Use for: judging correctness, design, complexity, tests, naming, and consistency when reviewing code or an implementation plan.
+- [Google Engineering Practices: The standard of code review](https://google.github.io/eng-practices/review/reviewer/standard.html)
+  Use for: deciding whether a change is good enough to accept, and how to separate required fixes from preferences.
+
 ## Project internals
 
 - [`docs/tutorials/20-filter-sort-pagination-deep-dive/README.md`](docs/tutorials/20-filter-sort-pagination-deep-dive/README.md)
@@ -50,6 +57,13 @@
   Use for: the decision rationale behind each architectural choice in Feature 11.
 - [`docs/architect/11-filter-sort-pagination/discussion.md`](docs/architect/11-filter-sort-pagination/discussion.md)
   Use for: the deep reasoning session that preceded implementation — including why the initial recommendation of `useState` was reversed.
+
+- [`docs/tutorials/23-job-details-page/README.md`](docs/tutorials/23-job-details-page/README.md)
+  Use for: the full Feature 12 implementation tutorial — route design, server data flow, five-component decomposition, and null state handling.
+- [`docs/plan/12-job-details-page/explanation.md`](docs/plan/12-job-details-page/explanation.md)
+  Use for: the decision rationale behind each architectural choice in Feature 12 (force-dynamic, two-filter query, stretched link, component path).
+- [`docs/architect/12-job-details-page/discussion.md`](docs/architect/12-job-details-page/discussion.md)
+  Use for: the deep reasoning session that preceded Feature 12 — security boundaries, Next.js 16 params, and scope decisions.
 
 ## Wisdom (Communities)
 

@@ -1,0 +1,373 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Lesson 0009 — Feature 12: UI Decisions, Navigation, and Null States</title>
+    <link rel="stylesheet" href="../assets/course.css" />
+    <style>
+      .null-table td:nth-child(2) { font-family: monospace; font-size: 13px; }
+      .null-table td:nth-child(3) { color: var(--muted); font-size: 13px; }
+      .strategy-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 12px;
+        margin: 18px 0;
+      }
+      .strategy-card {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 14px;
+        background: var(--paper);
+      }
+      .strategy-card h4 { margin: 0 0 6px; font-size: 14px; }
+      .strategy-card p { margin: 0; font-size: 13px; color: var(--muted); }
+      @media (max-width: 720px) { .strategy-grid { grid-template-columns: 1fr; } }
+    </style>
+  </head>
+  <body>
+    <main>
+      <article>
+        <nav class="lesson-nav no-print">
+          <a href="0008-feature-12-type-contract-components.html">← Lesson 0008</a>
+          <a href="0010-feature-12-verification-plan-review.html">Lesson 0010 →</a>
+          <a href="../reference/0004-feature-12-cheat-sheet.html">Cheat Sheet</a>
+          <a href="../context/ui-tokens.md">UI Tokens</a>
+          <a href="../context/ui-registry.md">UI Registry</a>
+        </nav>
+
+        <p class="kicker">Lesson 0009</p>
+        <h1>Feature 12 — UI Decisions, Navigation Semantics, and Null States</h1>
+        <p class="muted">
+          Goal: understand how design tokens are applied in Feature 12 components,
+          why the stretched link is the correct navigation pattern for table rows,
+          the difference between <code>source_url</code> and <code>external_apply_url</code>,
+          and how to reason about every null/empty state decision.
+          Series: Feature 12 Deep Dive (3 of 4).
+        </p>
+
+        <!-- ─────────────────────────────────────────────── -->
+        <h2>1 — Design tokens in practice</h2>
+
+        <p>The rule in <a href="../context/ui-rules.md"><code>context/ui-rules.md</code></a>:</p>
+        <blockquote style="border-left:3px solid var(--line);margin:12px 0;padding:4px 16px;color:var(--muted)">
+          "Never use Tailwind's built-in color classes (<code>bg-purple-500</code>, <code>text-gray-600</code>) — use project tokens only."
+        </blockquote>
+
+        <p>What does this look like in Feature 12? Open <a href="../components/job-details/JobInfo.tsx"><code>components/job-details/JobInfo.tsx</code></a>.
+        The match badge uses a helper function instead of inline conditional classes:</p>
+
+        <pre><code>function matchBadgeClasses(score: number): string {
+  if (score >= 70) return "bg-success-lightest text-success-dark";
+  if (score >= 50) return "bg-warning-light text-warning";
+  return "bg-surface-tertiary text-text-muted";
+}</code></pre>
+
+        <p>None of these are raw Tailwind colors like <code>bg-green-100</code>.
+        They are all tokens from <a href="../context/ui-tokens.md"><code>context/ui-tokens.md</code></a>.
+        The function returns a complete class string (not a partial) so Tailwind's scanner can detect and include the classes.</p>
+
+        <h3>Card patterns from the UI registry</h3>
+
+        <p>The <a href="../context/ui-registry.md"><code>context/ui-registry.md</code></a> defines two card levels used in Feature 12:</p>
+
+        <table class="ref">
+          <thead><tr><th>Level</th><th>Classes</th><th>Used for</th></tr></thead>
+          <tbody>
+            <tr><td>Main card</td><td><code>bg-surface border border-border rounded-2xl p-6 shadow-sm</code></td><td>JobInfo header, MatchScore cards, JobDescription, CompanyResearch</td></tr>
+            <tr><td>Sub-card (info stat)</td><td><code>bg-surface border border-border rounded-xl p-4 shadow-sm</code></td><td>4-column info row inside JobInfo</td></tr>
+          </tbody>
+        </table>
+
+        <p>The sub-card uses <code>rounded-xl</code> (smaller radius) nested inside the main <code>rounded-2xl</code> card.
+        The rule: never stack the same border radius — the inner element must be smaller.
+        Open <a href="../components/job-details/JobInfo.tsx"><code>components/job-details/JobInfo.tsx</code></a>, lines 77–89:</p>
+
+        <pre><code>&lt;div className="grid grid-cols-4 gap-4"&gt;
+  &lt;div className="bg-surface border border-border rounded-xl p-4 shadow-sm flex items-center gap-3"&gt;
+    &lt;div className="w-8 h-8 bg-success-lightest rounded-lg ..."&gt;
+      &lt;DollarSign size={16} className="text-success" /&gt;
+    &lt;/div&gt;
+    &lt;div&gt;
+      &lt;p className="text-sm font-semibold text-text-primary"&gt;{job.salary ?? "—"}&lt;/p&gt;
+      &lt;p className="text-xs font-medium text-text-secondary uppercase tracking-wide mt-0.5"&gt;Salary Est.&lt;/p&gt;
+    &lt;/div&gt;
+  &lt;/div&gt;
+  ...
+&lt;/div&gt;</code></pre>
+
+        <div class="callout">
+          <strong>Review question to ask:</strong>
+          Does this plan use only token classes (<code>bg-surface</code>, <code>text-text-primary</code>)
+          or does it use raw Tailwind colors (<code>bg-white</code>, <code>text-gray-900</code>)?
+          Raw Tailwind colors in components are a hard rule violation. Flag every one.
+        </div>
+
+        <div class="quiz">
+          <details>
+            <summary>Retrieval check: Why does the match badge use a helper function (<code>matchBadgeClasses()</code>) instead of inline conditional JSX like <code>score >= 70 ? "bg-success-lightest" : "bg-warning-light"</code>?</summary>
+            <div class="answer">
+              Two reasons. First, readability: a three-tier conditional is easier to read as a named function. Second, and more importantly: Tailwind's scanner needs to see complete class strings in source code to include them in the generated CSS. If you build class names from partial string concatenation (e.g., <code>`bg-${color}-lightest`</code>), the scanner won't detect them and the classes will be absent from the stylesheet. The function returns complete class strings, so the scanner picks them all up on the lines where they appear in the function body.
+            </div>
+          </details>
+        </div>
+
+        <!-- ─────────────────────────────────────────────── -->
+        <h2>2 — Navigation semantics: the stretched link pattern</h2>
+
+        <p>Feature 11 left table rows with <code>cursor-pointer</code> but no navigation.
+        Feature 12 makes them navigable. Open <a href="../components/find-jobs/JobsTable.tsx"><code>components/find-jobs/JobsTable.tsx</code></a>, lines 67–84.</p>
+
+        <h3>Why not <code>onClick</code> with <code>useRouter</code>?</h3>
+
+        <div class="grid">
+          <div class="card">
+            <p class="muted" style="font-size:11px;font-weight:700;text-transform:uppercase">onClick approach (wrong)</p>
+            <pre><code>&lt;tr onClick={() => router.push(
+    `/find-jobs/${job.id}`
+  )}&gt;</code></pre>
+            <ul style="font-size:13px;margin-top:8px">
+              <li>Requires <code>"use client"</code> + <code>useRouter</code></li>
+              <li>Right-click shows no "Open in new tab"</li>
+              <li>Middle-click does nothing</li>
+              <li>Screen readers can't find it as a link</li>
+              <li>Can't copy the URL</li>
+            </ul>
+          </div>
+          <div class="card">
+            <p class="muted" style="font-size:11px;font-weight:700;text-transform:uppercase">Stretched link (correct)</p>
+            <pre><code>&lt;tr className="relative ..."&gt;
+  &lt;td&gt;
+    &lt;Link
+      href={`/find-jobs/${job.id}`}
+      className="... after:absolute
+        after:inset-0
+        after:content-['']
+        after:z-1"
+      aria-label="View ... at ..."
+    &gt;{job.company}&lt;/Link&gt;
+  &lt;/td&gt;
+&lt;/tr&gt;</code></pre>
+            <ul style="font-size:13px;margin-top:8px">
+              <li>Real <code>&lt;a&gt;</code> element with href</li>
+              <li>Right-click → "Open in new tab" ✓</li>
+              <li>Middle-click opens new tab ✓</li>
+              <li>Screen readers announce it as a link ✓</li>
+              <li>No extra JavaScript needed ✓</li>
+            </ul>
+          </div>
+        </div>
+
+        <h3>How the <code>::after</code> pseudo-element covers the row</h3>
+
+        <p>The mechanism is pure CSS, no JavaScript:</p>
+
+        <ol class="steps">
+          <li>
+            <div>
+              <strong><code>&lt;tr className="relative"&gt;</code></strong>
+              — gives the row <code>position: relative</code>, making it the "positioned ancestor"
+            </div>
+          </li>
+          <li>
+            <div>
+              <strong><code>after:absolute</code></strong>
+              — the <code>::after</code> pseudo-element of the <code>&lt;Link&gt;</code> is positioned absolutely, sizing relative to the nearest positioned ancestor (the <code>&lt;tr&gt;</code>)
+            </div>
+          </li>
+          <li>
+            <div>
+              <strong><code>after:inset-0</code></strong>
+              — shorthand for top/right/bottom/left all = 0. The pseudo-element stretches to every edge of the <code>&lt;tr&gt;</code>, covering the full row
+            </div>
+          </li>
+          <li>
+            <div>
+              <strong><code>after:content-['']</code></strong>
+              — creates the pseudo-element (without <code>content</code>, nothing renders)
+            </div>
+          </li>
+          <li>
+            <div>
+              <strong><code>after:z-1</code></strong>
+              — gives the pseudo-element <code>z-index: 1</code>, ensuring it sits above other cell content (match score bar, text) in the stacking order. Without this, clicks on other cell content might not trigger the link.
+            </div>
+          </li>
+        </ol>
+
+        <p>The <code>aria-label</code> matters for screen readers.
+        Without it, a screen reader would announce only the visible text: "HSBC."
+        With it: "View Software Engineer at HSBC" — the user knows exactly where the link goes.</p>
+
+        <div class="callout">
+          <strong>Review question to ask:</strong>
+          Does the plan use <code>onClick</code> / <code>useRouter</code> for table row navigation?
+          If yes — flag it. Ask whether right-click "Open in new tab" works,
+          and whether screen readers can navigate to it. The stretched link is the correct pattern.
+        </div>
+
+        <div class="quiz">
+          <details>
+            <summary>Retrieval check: Why was <code>after:z-1</code> added during the project review phase rather than during initial implementation?</summary>
+            <div class="answer">
+              The initial implementation used <code>after:absolute after:inset-0 after:content-['']</code> without a <code>z-index</code>. The project review identified that without <code>z-index: 1</code> on the <code>::after</code>, positioned elements in other cells (like the match score bar <code>div</code> elements) could render above the pseudo-element, making clicks on those areas miss the link. Adding <code>after:z-1</code> ensures the pseudo-element is always on top of other cell content. This is a subtle browser stacking behaviour that only appears during manual testing, which is why it was caught in the review's "Minor flag 1" rather than during static analysis.
+            </div>
+          </details>
+        </div>
+
+        <!-- ─────────────────────────────────────────────── -->
+        <h2>3 — <code>source_url</code> vs <code>external_apply_url</code>: two different destinations</h2>
+
+        <p>Open <a href="../components/job-details/JobInfo.tsx"><code>components/job-details/JobInfo.tsx</code></a> (View Job Post button)
+        and <a href="../components/job-details/JobActions.tsx"><code>components/job-details/JobActions.tsx</code></a> (Apply Now button).</p>
+
+        <table class="ref">
+          <thead><tr><th>Field</th><th>Example value</th><th>Button</th><th>User intent</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><code>source_url</code></td>
+              <td><code>hk.jobsdb.com/job/66500000/...</code></td>
+              <td>View Job Post</td>
+              <td>See the original listing, share it, read the formatted description</td>
+            </tr>
+            <tr>
+              <td><code>external_apply_url</code></td>
+              <td><code>hsbc.taleo.net/careersection/hk/...</code></td>
+              <td>Apply Now</td>
+              <td>Start the application process directly on the employer's system</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <p>JobsDB is an aggregator. Employers pay to list jobs there but receive applications through their own Applicant Tracking System (Workday, Taleo, Greenhouse, etc.).
+        The actor scrapes <em>both</em>: the canonical listing URL and the URL the apply button links to.</p>
+
+        <p>Open <a href="../components/job-details/JobActions.tsx"><code>JobActions.tsx</code></a>:</p>
+
+        <pre><code>const applyHref = externalApplyUrl ?? sourceUrl;</code></pre>
+
+        <p>The <code>??</code> (nullish coalescing) operator handles future Adzuna jobs
+        where <code>external_apply_url</code> may be null.
+        For Adzuna, <code>source_url</code> is both the listing and the apply destination.
+        The fallback ensures Apply Now always has a URL.</p>
+
+        <div class="callout">
+          <strong>Review question to ask:</strong>
+          Does the plan distinguish between <code>source_url</code> and <code>external_apply_url</code>?
+          If Apply Now uses <code>source_url</code>, the user lands on the listing and must click Apply again.
+          That's an extra step. The plan should use <code>external_apply_url ?? source_url</code>.
+        </div>
+
+        <div class="quiz">
+          <details>
+            <summary>Retrieval check: Both <code>source_url</code> and <code>external_apply_url</code> are <code>string | null</code> in the <code>Job</code> type. If both are null, what does the Apply Now button do?</summary>
+            <div class="answer">
+              <code>applyHref = null ?? null = null</code>. The component's <code>if (applyHref)</code> check is false, so it falls through to the <code>&lt;button disabled&gt;</code> branch. The button renders as visually disabled with <code>opacity-50 cursor-not-allowed</code>. The user sees the button but cannot click it. This is the correct behaviour — never navigate to <code>null</code>. For real JobsDB jobs <code>external_apply_url</code> is never null (the actor always finds an apply URL or falls back to <code>source_url</code> itself before saving).
+            </div>
+          </details>
+        </div>
+
+        <!-- ─────────────────────────────────────────────── -->
+        <h2>4 — Null and empty states: the three strategies</h2>
+
+        <p>Feature 12 handles nullable data using three distinct strategies.
+        Choosing the right one depends on what the absence of data means to the user.</p>
+
+        <div class="strategy-grid">
+          <div class="strategy-card">
+            <h4>Strategy 1 — Hide entirely</h4>
+            <p>The element has no meaningful null state. Its presence implies content.</p>
+          </div>
+          <div class="strategy-card">
+            <h4>Strategy 2 — Show "—"</h4>
+            <p>The element's position in a layout must be preserved. "—" means "checked, not available."</p>
+          </div>
+          <div class="strategy-card">
+            <h4>Strategy 3 — Show empty state message</h4>
+            <p>Users expect content in a named section. Absence without explanation is confusing.</p>
+          </div>
+        </div>
+
+        <h3>Every nullable field in Feature 12 and its strategy</h3>
+
+        <table class="ref null-table">
+          <thead><tr><th>Field</th><th>Null rule</th><th>Strategy</th><th>File</th></tr></thead>
+          <tbody>
+            <tr><td>match_score</td><td><code>job.match_score != null</code> → show badge; else → nothing</td><td>Hide entirely</td><td>JobInfo.tsx:47</td></tr>
+            <tr><td>source_url</td><td><code>job.source_url</code> → show button; else → nothing</td><td>Hide entirely</td><td>JobInfo.tsx:61</td></tr>
+            <tr><td>match_reason</td><td><code>job.match_reason</code> → show card; else → no card</td><td>Hide entirely</td><td>MatchScore.tsx:15</td></tr>
+            <tr><td>salary</td><td><code>job.salary ?? "—"</code></td><td>Show "—"</td><td>JobInfo.tsx:83</td></tr>
+            <tr><td>location</td><td><code>job.location ?? "—"</code></td><td>Show "—"</td><td>JobInfo.tsx:98</td></tr>
+            <tr><td>job_type</td><td><code>formatJobType(job.job_type)</code> → "—" for null</td><td>Show "—"</td><td>JobInfo.tsx:111</td></tr>
+            <tr><td>matched_skills</td><td><code>hasMatchedSkills</code> → show section; else → nothing</td><td>Hide subsection</td><td>MatchScore.tsx:39</td></tr>
+            <tr><td>missing_skills</td><td><code>hasMissingSkills</code> → show section; else → nothing</td><td>Hide subsection</td><td>MatchScore.tsx:58</td></tr>
+            <tr><td>both skill arrays null</td><td><code>hasNoSkillData</code> → "No skill data available."</td><td>Empty state message</td><td>MatchScore.tsx:36</td></tr>
+            <tr><td>about_role</td><td><code>aboutRole ?? "No description available."</code></td><td>Empty state message</td><td>JobDescription.tsx:15</td></tr>
+            <tr><td>external_apply_url</td><td><code>externalApplyUrl ?? sourceUrl</code> → disabled button if both null</td><td>Disabled button</td><td>JobActions.tsx:10–29</td></tr>
+          </tbody>
+        </table>
+
+        <h3>The decision rule for which strategy to use</h3>
+
+        <p>Ask: <em>Would the user be confused if this element disappeared?</em></p>
+        <ul>
+          <li><strong>The match badge disappears</strong> → no confusion. Badges show when they have content.</li>
+          <li><strong>The salary info card disappears</strong> → confusing. The 4-column grid looks broken. Show "—" instead.</li>
+          <li><strong>The "Required Skills vs Your Profile" card is empty</strong> → confusing. Users expect skill data. Show an explicit message.</li>
+          <li><strong>The AI reasoning card disappears</strong> → no confusion. A card titled "AI Match Reasoning" with nothing in it would confuse users about what the feature means.</li>
+        </ul>
+
+        <h3><code>whitespace-pre-line</code> and scraped text</h3>
+
+        <p>Open <a href="../components/job-details/JobDescription.tsx"><code>components/job-details/JobDescription.tsx</code></a>:</p>
+
+        <pre><code>&lt;p className="text-sm text-text-primary leading-relaxed whitespace-pre-line"&gt;
+  {aboutRole ?? "No description available."}
+&lt;/p&gt;</code></pre>
+
+        <p>The Apify actor scrapes descriptions using <code>innerText</code>.
+        <code>innerText</code> preserves newlines (<code>\n</code>) where HTML block elements were — paragraphs, list items, headings.
+        The default CSS <code>white-space: normal</code> collapses all whitespace including newlines into a single space.
+        A multi-paragraph description becomes one run-on sentence.</p>
+
+        <p><code>whitespace-pre-line</code> preserves <code>\n</code> characters as visible line breaks
+        while still collapsing multiple spaces. The result: paragraph structure without needing to parse HTML.</p>
+
+        <div class="callout">
+          <strong>Review question to ask:</strong>
+          If the plan renders a scraped text field without <code>whitespace-pre-line</code>,
+          all paragraph breaks will disappear. Check every field that stores raw scraped text.
+          In Feature 12, that is <code>about_role</code>.
+        </div>
+
+        <div class="quiz">
+          <details>
+            <summary>Retrieval check: Why is <code>whitespace-pre-line</code> better than <code>whitespace-pre</code> for scraped text?</summary>
+            <div class="answer">
+              <code>whitespace-pre</code> preserves <em>all</em> whitespace — including spaces. Scraped <code>innerText</code> often has inconsistent spacing from indentation or browser-specific rendering. Preserving every space would cause misaligned text. <code>whitespace-pre-line</code> preserves only newlines (the meaningful structure) while still collapsing multiple spaces (normalising the inconsistency). It is the precise tool for <code>innerText</code> output.
+            </div>
+          </details>
+        </div>
+
+        <!-- ─────────────────────────────────────────────── -->
+        <h2>Summary</h2>
+
+        <ul>
+          <li>All styling uses token classes from <code>ui-tokens.md</code> — never raw Tailwind colors or hex values.</li>
+          <li>Main cards: <code>rounded-2xl p-6</code>. Info stat sub-cards: <code>rounded-xl p-4</code>. Inner radius is always smaller than outer.</li>
+          <li>Stretched link gives table rows native <code>&lt;a&gt;</code> semantics — right-click, middle-click, screen reader support, no extra JS.</li>
+          <li><code>after:z-1</code> ensures the pseudo-element wins the stacking order over other cell content.</li>
+          <li><code>source_url</code> = listing page (View Job Post). <code>external_apply_url</code> = apply destination (Apply Now).</li>
+          <li>Three null strategies: hide entirely, show "—", show empty state message. Choose based on whether absence would confuse the user.</li>
+          <li><code>whitespace-pre-line</code> preserves newlines in scraped <code>innerText</code> descriptions.</li>
+        </ul>
+
+        <p class="muted" style="font-size:13px;margin-top:32px">
+          <strong>Next:</strong>
+          <a href="0010-feature-12-verification-plan-review.html">Lesson 0010 — Verification and Plan Review Exercise</a><br>
+          <strong>Ask:</strong> If anything above is unclear, ask Claude to explain it with the actual files open.
+        </p>
+      </article>
+    </main>
+  </body>
+</html>

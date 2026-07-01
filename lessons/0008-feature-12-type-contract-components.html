@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Lesson 0008 — Feature 12: Type Contract and Component Architecture</title>
+    <link rel="stylesheet" href="../assets/course.css" />
+  </head>
+  <body>
+    <main>
+      <article>
+        <nav class="lesson-nav no-print">
+          <a href="0007-feature-12-overview-route-data-flow.html">← Lesson 0007</a>
+          <a href="0009-feature-12-ui-navigation-null-states.html">Lesson 0009 →</a>
+          <a href="../reference/0004-feature-12-cheat-sheet.html">Cheat Sheet</a>
+          <a href="../types/index.ts">types/index.ts</a>
+          <a href="../docs/plan/12-job-details-page/explanation.md">Explanation</a>
+        </nav>
+
+        <p class="kicker">Lesson 0008</p>
+        <h1>Feature 12 — The Type Contract and Component Architecture</h1>
+        <p class="muted">
+          Goal: understand how the <code>Job</code> interface's nullable fields drive UI rendering decisions,
+          why the page decomposes into exactly five components, and why Feature 12 is intentionally read-only.
+          Series: Feature 12 Deep Dive (2 of 4).
+        </p>
+
+        <!-- ─────────────────────────────────────────────── -->
+        <h2>1 — The <code>Job</code> interface as a UI contract</h2>
+
+        <p>Open <a href="../types/index.ts"><code>types/index.ts</code></a>, lines 117–142.
+        The <code>Job</code> interface is the contract between the database and every component on the detail page.</p>
+
+        <pre><code>export interface Job {
+  id: string
+  run_id: string | null
+  user_id: string
+  source: JobSource
+  source_provider: JobProvider | null
+  source_url: string | null         // ← null → hide "View Job Post" button
+  external_apply_url: string | null // ← null → Apply Now falls back to source_url
+  title: string | null
+  company: string | null
+  location: string | null           // ← null → show "—" in info card
+  salary: string | null             // ← null → show "—" in info card
+  job_type: JobType | null          // ← null → show "—", not "Full-time"
+  about_role: string | null         // ← null → "No description available."
+  responsibilities: string[] | null // ← not displayed in Feature 12
+  requirements: string[] | null     // ← not displayed in Feature 12
+  nice_to_have: string[] | null     // ← not displayed in Feature 12
+  benefits: string[] | null         // ← not displayed in Feature 12
+  about_company: string | null      // ← not displayed in Feature 12
+  match_score: number | null        // ← null → hide badge entirely
+  match_reason: string | null       // ← null → hide reasoning card entirely
+  matched_skills: string[] | null   // ← null/empty → hide "You have" section
+  missing_skills: string[] | null   // ← null/empty → hide "Gap skills" section
+  company_research: CompanyResearchDossier | null // ← always null in Feature 12
+  found_at: string                  // ← always present, used in info card
+}</code></pre>
+
+        <p>Notice how many fields are <code>| null</code>.
+        This is not accidental — it reflects the reality of scraped job data.
+        JobsDB does not always list salary. The AI model may not always produce a match reason.
+        A job discovered before the scorer ran will have null <code>match_score</code>.</p>
+
+        <p>Every nullable field forces a UI decision: show a fallback, hide the element, or show an empty state.
+        That decision is driven by the <code>Job</code> interface — the type is the spec.</p>
+
+        <div class="callout">
+          <strong>Review question to ask:</strong>
+          For every field the plan renders, is the field nullable in <code>types/index.ts</code>?
+          If yes — does the plan specify what to show when it's null?
+          A plan that renders <code>{job.salary}</code> without a null fallback is missing a specification.
+        </div>
+
+        <h3>The <code>job_type</code> trap</h3>
+
+        <p><code>job_type</code> is typed as <code>JobType | null</code>,
+        where <code>JobType = 'fulltime' | 'parttime' | 'contract'</code>.</p>
+
+        <p>A common mistake: show "Full-time" when <code>job_type</code> is null (treating null as a default).
+        The correct rule: null means <em>unknown</em>, not <em>full-time</em>.
+        A user making a decision about a role based on a fabricated default is misled.</p>
+
+        <p>Open <a href="../components/job-details/JobInfo.tsx"><code>components/job-details/JobInfo.tsx</code></a>, lines 13–18:</p>
+
+        <pre><code>function formatJobType(t: string | null): string {
+  if (t === "fulltime") return "Full-time";
+  if (t === "parttime") return "Part-time";
+  if (t === "contract") return "Contract";
+  return "—";       // null OR unrecognised string → dash
+}</code></pre>
+
+        <p>The function returns <code>"—"</code> for null. It never returns <code>"Full-time"</code> as a default.</p>
+
+        <div class="quiz">
+          <details>
+            <summary>Retrieval check: The find route converts scraped text to <code>JobType</code> before saving. If "full time" was found on the page, it becomes <code>'fulltime'</code>. So when would <code>job_type</code> be null?</summary>
+            <div class="answer">
+              When the actor's scraper found no job type information on the listing page at all — the field was absent or unreadable. The find route only converts values it received; if the actor returned null for that field, the route saves null. A null in the DB means "we did not collect this information," not "the job is full-time by default."
+            </div>
+          </details>
+        </div>
+
+        <!-- ─────────────────────────────────────────────── -->
+        <h2>2 — The five-component decomposition</h2>
+
+        <p>Open <a href="../context/architecture.md"><code>context/architecture.md</code></a> and find the <code>components/</code> section.
+        The architecture doc pre-defines the decomposition:</p>
+
+        <pre><code>components/
+  job-details/
+    JobInfo.tsx         → header card + 4-column info row
+    MatchScore.tsx      → AI reasoning + skills cards
+    JobDescription.tsx  → full job description card
+    CompanyResearch.tsx → company research card (F13 placeholder)
+    JobActions.tsx      → Apply Now button</code></pre>
+
+        <p>These were planned as separate components, not as one monolithic <code>JobDetailsContent.tsx</code>.
+        Why?</p>
+
+        <table class="ref">
+          <thead><tr><th>Component</th><th>Why separate</th></tr></thead>
+          <tbody>
+            <tr><td><code>JobInfo</code></td><td>Owns the header + info grid. Distinct visual block. Will always render. Contains display-only helpers (<code>formatJobType</code>, <code>matchBadgeClasses</code>).</td></tr>
+            <tr><td><code>MatchScore</code></td><td>Two conditional cards (reasoning + skills). Conditional rendering logic belongs in one place, not spread across a larger file.</td></tr>
+            <tr><td><code>JobDescription</code></td><td>Single card with specific CSS requirement (<code>whitespace-pre-line</code>). Isolated from other text rendering.</td></tr>
+            <tr><td><code>CompanyResearch</code></td><td>Feature 13 will replace this with a Client Component that has <code>onClick</code>. Keeping it isolated means Feature 13 edits one file, not a 200-line component.</td></tr>
+            <tr><td><code>JobActions</code></td><td>The apply button has its own URL logic (<code>externalApplyUrl ?? sourceUrl</code>) and two distinct render paths (link vs disabled button). Isolated.</td></tr>
+          </tbody>
+        </table>
+
+        <p>Notice the last row: <code>CompanyResearch</code> is intentionally isolated because it will change in Feature 13.
+        Good component decomposition anticipates where future changes will happen and draws the boundary there.</p>
+
+        <h3>The component path: <code>components/job-details/</code>, not <code>components/find-jobs/job-details/</code></h3>
+
+        <p>The route lives under <code>app/find-jobs/[id]/</code>.
+        A developer might expect the components to live under <code>components/find-jobs/</code>.
+        They don't. They live at <code>components/job-details/</code> — a top-level sibling of <code>components/find-jobs/</code>.</p>
+
+        <p>The architecture doc defines this explicitly.
+        The reason: routes can be restructured (move to <code>/jobs/[id]</code>, add a route group) without touching components.
+        If components were nested under the route path, a route refactor would require moving components.
+        Separating them means route and component directories evolve independently.</p>
+
+        <div class="callout">
+          <strong>Review question to ask:</strong>
+          Does the plan put new components under the route path (e.g., <code>components/find-jobs/job-details/</code>)?
+          Check <code>architecture.md</code> — if the architecture doc defines the folder, use it. Don't create a new one.
+        </div>
+
+        <div class="quiz">
+          <details>
+            <summary>Retrieval check: All five components are Server Components. What does that mean for the browser's JavaScript bundle?</summary>
+            <div class="answer">
+              Server Components render on the server and send HTML to the browser. Their code is never sent as JavaScript to the client. This means the browser downloads no JavaScript for these components — zero bundle cost. They receive props from the page Server Component and return HTML. Adding <code>"use client"</code> to any of them would push their code into the browser bundle for no reason, since they have no event handlers, state, or browser API usage.
+            </div>
+          </details>
+        </div>
+
+        <!-- ─────────────────────────────────────────────── -->
+        <h2>3 — Read-only scope: what Feature 12 does <em>not</em> do</h2>
+
+        <p>Feature 12 is deliberately limited to display only.
+        This is captured in the plan file
+        (<a href="../docs/plan/12-job-details-page/plan.md"><code>docs/plan/12-job-details-page/plan.md</code></a>):</p>
+
+        <blockquote style="border-left:3px solid var(--line);margin:12px 0;padding:4px 16px;color:var(--muted)">
+          "No agent calls, no mutations — this is a read-only display feature."
+        </blockquote>
+
+        <p>Specifically, Feature 12 does NOT:</p>
+
+        <table class="ref">
+          <thead><tr><th>What is absent</th><th>Why absent</th><th>Where it belongs</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>Agent calls (Browserbase / Stagehand)</td>
+              <td>No company research triggered yet</td>
+              <td>Feature 13 — Company Research Agent</td>
+            </tr>
+            <tr>
+              <td>DB mutations (UPDATE / INSERT)</td>
+              <td>Page only reads the existing job row</td>
+              <td>Server Actions in <code>actions/</code> — not applicable here</td>
+            </tr>
+            <tr>
+              <td>PostHog events</td>
+              <td>No trackable user action occurs on page load</td>
+              <td>Feature 13 fires <code>company_researched</code> when research runs</td>
+            </tr>
+            <tr>
+              <td>Wired "Research Company" button</td>
+              <td>Research Company is a placeholder (disabled button)</td>
+              <td>Feature 13 upgrades <code>CompanyResearch.tsx</code> to a Client Component</td>
+            </tr>
+            <tr>
+              <td><code>company_research</code> JSONB field rendering</td>
+              <td>Always null in Feature 12</td>
+              <td>Feature 13 renders the dossier after research completes</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <p>The <code>CompanyResearch</code> component illustrates this boundary clearly.
+        Open <a href="../components/job-details/CompanyResearch.tsx"><code>components/job-details/CompanyResearch.tsx</code></a>:</p>
+
+        <pre><code>export function CompanyResearch({ company }: Props) {
+  return (
+    &lt;div className="bg-surface border border-border rounded-2xl p-6 shadow-sm"&gt;
+      &lt;div className="flex items-center justify-between mb-6"&gt;
+        ...
+        {/* Feature 13 will replace this with a wired Client Component */}
+        &lt;button
+          disabled
+          className="... opacity-50 cursor-not-allowed"
+        &gt;
+          Research Company
+        &lt;/button&gt;
+      &lt;/div&gt;
+      &lt;!-- empty state --&gt;
+    &lt;/div&gt;
+  );
+}</code></pre>
+
+        <p>The comment "<code>Feature 13 will replace this</code>" is a scope boundary marker.
+        It says: this is as far as Feature 12 goes.
+        The button renders, looks correct, and is visually disabled.
+        Nothing is wired. That is correct for this feature.</p>
+
+        <div class="callout">
+          <strong>Review question to ask:</strong>
+          Does this plan wire up any functionality that isn't in scope for this feature?
+          If the plan shows the Research Company button triggering an API call, that's scope creep.
+          If it's disabled, that's correct.
+          Scope boundaries prevent one feature from silently depending on another's work.
+        </div>
+
+        <div class="quiz">
+          <details>
+            <summary>Retrieval check: Feature 12 fires no PostHog events. When should <code>company_researched</code> fire, and where?</summary>
+            <div class="answer">
+              <code>company_researched</code> should fire in Feature 13 when the research agent completes and saves the dossier to <code>jobs.company_research</code>. According to <code>code-standards.md</code>, the PostHog event table lists it as triggered when "Company research dossier generated." The API route <code>app/api/agent/research/route.ts</code> (Feature 13) is where it will fire — after the agent returns successfully, not on the page load in Feature 12.
+            </div>
+          </details>
+        </div>
+
+        <!-- ─────────────────────────────────────────────── -->
+        <h2>4 — The <code>job as Job</code> type assertion</h2>
+
+        <p>Open <a href="../app/find-jobs/[id]/page.tsx"><code>app/find-jobs/[id]/page.tsx</code></a>, line 38:</p>
+
+        <pre><code>// InsForge returns untyped query data — shape matches the jobs table Job type
+const typedJob = job as Job;</code></pre>
+
+        <p>InsForge's TypeScript SDK returns query results as a generic type, not a typed entity.
+        The <code>Job</code> interface in <code>types/index.ts</code> describes the exact shape of the <code>jobs</code> table.
+        The assertion tells TypeScript: treat this query result as a <code>Job</code>.</p>
+
+        <p>The code standards say: <em>"Never use type assertions unless absolutely necessary and commented why."</em></p>
+
+        <p>The assertion is justified here because:</p>
+        <ul>
+          <li>The query is <code>.select("*")</code> from the <code>jobs</code> table — all columns, no joins, no transformations</li>
+          <li>The <code>Job</code> interface was derived from the same schema (Feature 04 created both together)</li>
+          <li>The shape cannot diverge unless the schema changes, at which point both files must be updated</li>
+        </ul>
+
+        <p>The inline comment explains <em>why</em> the assertion is safe.
+        Without it, a future reader would see <code>as Job</code> and wonder if someone was papering over a type error.</p>
+
+        <div class="quiz">
+          <details>
+            <summary>Retrieval check: When would this type assertion become unsafe?</summary>
+            <div class="answer">
+              If the query were changed to a partial select (e.g., <code>.select("id, title, company")</code>) — then <code>job</code> would only have three fields, but the assertion would claim it has all Job fields. Accessing <code>typedJob.match_score</code> would return <code>undefined</code> at runtime while TypeScript believes it's <code>number | null</code>. The assertion would be masking an incompleteness. The fix would be to either select all fields (keep <code>select("*")</code>) or use a partial type rather than the full <code>Job</code>.
+            </div>
+          </details>
+        </div>
+
+        <!-- ─────────────────────────────────────────────── -->
+        <h2>Summary</h2>
+
+        <ul>
+          <li>The <code>Job</code> interface is the UI spec — every nullable field requires a null-handling decision in the components.</li>
+          <li><code>formatJobType(null)</code> returns <code>"—"</code>, not <code>"Full-time"</code> — never invent values for null fields.</li>
+          <li>Five components, each with one responsibility — decomposed at the lines where future changes will happen.</li>
+          <li>Components live in <code>components/job-details/</code> (per architecture.md), not nested under the route.</li>
+          <li>Feature 12 is read-only: no agents, no mutations, no PostHog events, no wired research button.</li>
+          <li>The <code>job as Job</code> assertion is safe because the query selects all columns from the table the type was derived from — and the comment says so.</li>
+        </ul>
+
+        <p class="muted" style="font-size:13px;margin-top:32px">
+          <strong>Next:</strong>
+          <a href="0009-feature-12-ui-navigation-null-states.html">Lesson 0009 — UI Decisions: Tokens, Navigation, and Null States</a><br>
+          <strong>Ask:</strong> If anything above is unclear, ask Claude to explain it in the context of the actual files.
+        </p>
+      </article>
+    </main>
+  </body>
+</html>

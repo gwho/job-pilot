@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Lesson 0006 - Reviewing Coding Agent Plans</title>
+    <link rel="stylesheet" href="../assets/course.css" />
+    <style>
+      .opinion-box {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 16px;
+        margin: 14px 0;
+        background: var(--paper);
+      }
+      .opinion-box strong {
+        display: block;
+        margin-bottom: 6px;
+      }
+      .three-part {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+        margin: 18px 0;
+      }
+      .mini {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 12px;
+        background: var(--soft);
+        font-size: 14px;
+      }
+      .label {
+        display: inline-block;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--accent);
+        margin-bottom: 4px;
+      }
+      @media (max-width: 760px) {
+        .three-part { grid-template-columns: 1fr; }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <article>
+        <nav class="lesson-nav no-print">
+          <a href="0005-debugging-with-feedback-loops.html">Previous Lesson</a>
+          <a href="../reference/0003-agent-plan-review-checklist.html">Review Checklist</a>
+          <a href="../context/build-plan.md">Build Plan</a>
+          <a href="../context/code-standards.md">Code Standards</a>
+        </nav>
+
+        <p class="kicker">Lesson 0006</p>
+        <h1>What My Plan Review Opinions Mean</h1>
+        <p class="muted">
+          Goal: learn to review and criticize coding-agent plans yourself, using Feature 12 as the example.
+        </p>
+
+        <div class="callout">
+          <strong>One sentence version:</strong> a useful engineering opinion is not a preference. It is a claim about risk, backed by evidence, with a consequence for implementation.
+        </div>
+
+        <h2>The Three-Part Shape</h2>
+        <p>When I say "I would change this," read it as three hidden parts:</p>
+
+        <div class="three-part">
+          <div class="mini">
+            <span class="label">Claim</span>
+            <p>This part of the plan has a property: good, risky, inconsistent, missing, or unnecessary.</p>
+          </div>
+          <div class="mini">
+            <span class="label">Evidence</span>
+            <p>A project file, type, design rule, API contract, or user behavior proves the claim.</p>
+          </div>
+          <div class="mini">
+            <span class="label">Consequence</span>
+            <p>If ignored, the feature may break, drift from the design, mislead users, or become harder to test.</p>
+          </div>
+        </div>
+
+        <p>That is why you can criticize an agent plan without being a senior engineer yet. You do not need to "feel" whether the plan is good. You need to ask: where is the claim, where is the evidence, and what happens if it is wrong?</p>
+
+        <h2>Prerequisites You Need</h2>
+        <p>To review JobPilot plans well, learn these in order:</p>
+
+        <ol class="steps">
+          <li>
+            <div>
+              <strong>Feature scope.</strong>
+              Know what feature number is in progress and what is intentionally deferred. For Feature 12, Company Research is visible but not wired until Feature 13.
+            </div>
+          </li>
+          <li>
+            <div>
+              <strong>Folder ownership.</strong>
+              Know that <code>app/</code> owns pages/routes, <code>components/</code> owns UI, <code>agent/</code> owns agent logic, and DB queries must stay user-scoped.
+            </div>
+          </li>
+          <li>
+            <div>
+              <strong>Server versus Client Components.</strong>
+              Know when a component needs <code>"use client"</code>. Event handlers and <code>useRouter</code> need client code; plain rendering can stay server-side.
+            </div>
+          </li>
+          <li>
+            <div>
+              <strong>Type contracts and nullability.</strong>
+              Know how to read <code>types/index.ts</code>. If <code>Job.salary</code> is <code>string | null</code>, the UI needs a null display rule.
+            </div>
+          </li>
+          <li>
+            <div>
+              <strong>User interaction basics.</strong>
+              Know the difference between a clickable table row and a real link. Links support keyboard navigation, browser affordances, and opening in a new tab.
+            </div>
+          </li>
+          <li>
+            <div>
+              <strong>Verification.</strong>
+              Know whether a test or smoke check would catch the actual failure. A check that says "Apply Now opens source_url" would miss the intended <code>external_apply_url ?? source_url</code> behavior.
+            </div>
+          </li>
+        </ol>
+
+        <h2>Decode My Feature 12 Opinions</h2>
+
+        <div class="opinion-box">
+          <strong>Opinion: "The plan is right to keep Feature 12 read-only."</strong>
+          <p><span class="label">Meaning</span> The page should fetch and display one job. It should not run company research, score jobs again, or mutate the database.</p>
+          <p><span class="label">Evidence</span> <code>context/build-plan.md</code> separates Feature 12 Job Details UI from Feature 13 Company Research Agent.</p>
+          <p><span class="label">Why it matters</span> If the plan pulls Feature 13 forward, the implementation becomes harder to test and easier to break.</p>
+        </div>
+
+        <div class="opinion-box">
+          <strong>Opinion: "The user-scoped query is correct."</strong>
+          <p><span class="label">Meaning</span> Fetching by <code>id</code> alone is not enough. The page must also filter by <code>user_id</code>.</p>
+          <p><span class="label">Evidence</span> <code>context/code-standards.md</code> says every DB query must be scoped to the current user.</p>
+          <p><span class="label">Why it matters</span> Without the user filter, one authenticated user could potentially access another user's saved job by ID.</p>
+        </div>
+
+        <div class="opinion-box">
+          <strong>Opinion: "Do not invent Full-time when job_type is null."</strong>
+          <p><span class="label">Meaning</span> A null value means unknown, not full-time. The UI should show <code>-</code> unless the stored value says otherwise.</p>
+          <p><span class="label">Evidence</span> <code>Job.job_type</code> is nullable in <code>types/index.ts</code>.</p>
+          <p><span class="label">Why it matters</span> Invented data trains users to trust information the app does not actually have.</p>
+        </div>
+
+        <div class="opinion-box">
+          <strong>Opinion: "Prefer real links over only router.push on a table row."</strong>
+          <p><span class="label">Meaning</span> <code>router.push</code> can navigate, but it does not automatically give the user all normal link behavior.</p>
+          <p><span class="label">Evidence</span> Feature 11 uses URL state so back-navigation matters; Feature 12 adds row navigation from <code>/find-jobs</code> to <code>/find-jobs/[id]</code>.</p>
+          <p><span class="label">Why it matters</span> Keyboard access, open-in-new-tab, and visible link semantics are part of the real user experience.</p>
+        </div>
+
+        <div class="opinion-box">
+          <strong>Opinion: "Fix contradictions inside the plan before coding."</strong>
+          <p><span class="label">Meaning</span> The plan correctly says Apply Now should use <code>external_apply_url ?? source_url</code>, but the smoke test says it opens <code>source_url</code>.</p>
+          <p><span class="label">Evidence</span> The same pasted plan contains both statements.</p>
+          <p><span class="label">Why it matters</span> If the verification step is wrong, the agent can implement the right code and still test the wrong behavior, or vice versa.</p>
+        </div>
+
+        <h2>Your Review Algorithm</h2>
+        <ol class="steps">
+          <li>Read the plan once for intent: what user-visible thing will exist when this is done?</li>
+          <li>Mark every file in the plan and ask whether that folder owns that responsibility.</li>
+          <li>Check data fields against <code>types/index.ts</code>, especially nullable fields.</li>
+          <li>Check each interaction as a user: click, keyboard, back button, new tab, loading, empty state.</li>
+          <li>Read the verification section and ask: would this catch the bug or drift I am worried about?</li>
+          <li>Look for contradictions between the design, data contract, implementation steps, and smoke tests.</li>
+        </ol>
+
+        <div class="quiz">
+          <strong>Retrieval check:</strong> A plan says "make job rows navigable using <code>router.push</code>." What are two review questions you should ask before accepting it?
+          <details class="answer">
+            <summary>Reveal answer</summary>
+            <p>Ask: "Does this need to behave like a real link for keyboard users or open-in-new-tab?" and "Is the component already a Client Component, or does adding <code>useRouter</code> force a larger client boundary?"</p>
+          </details>
+        </div>
+
+        <h2>Primary Source</h2>
+        <p>For general review judgment, read Google's <a href="https://google.github.io/eng-practices/review/reviewer/looking-for.html">What to look for in a code review</a>. The categories map well to coding-agent plans: design, functionality, complexity, tests, naming, comments, and consistency.</p>
+
+        <div class="callout">
+          <strong>Ask me next:</strong> "Give me a plan and make me critique it first." That will turn this lesson from recognition into practice.
+        </div>
+      </article>
+    </main>
+  </body>
+</html>

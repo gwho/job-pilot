@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Lesson 0007 — Feature 12: Overview, Route, Server Data Flow</title>
+    <link rel="stylesheet" href="../assets/course.css" />
+  </head>
+  <body>
+    <main>
+      <article>
+        <nav class="lesson-nav no-print">
+          <a href="0006-reviewing-coding-agent-plans.html">← Lesson 0006</a>
+          <a href="0008-feature-12-type-contract-components.html">Lesson 0008 →</a>
+          <a href="../reference/0004-feature-12-cheat-sheet.html">Cheat Sheet</a>
+          <a href="../docs/plan/12-job-details-page/plan.md">Plan</a>
+          <a href="../docs/architect/12-job-details-page/decisions.md">Decisions</a>
+        </nav>
+
+        <p class="kicker">Lesson 0007</p>
+        <h1>Feature 12 — Overview, Route Design, and the Server Data Flow</h1>
+        <p class="muted">
+          Goal: understand what Feature 12 adds to JobPilot, why its route lives where it does,
+          and trace the exact server-side path from URL to rendered page.
+          Series: Feature 12 Deep Dive (1 of 4).
+        </p>
+
+        <div class="callout">
+          <strong>One sentence version:</strong>
+          Feature 12 adds a per-job detail page at <code>/find-jobs/[id]</code>.
+          The page is a Server Component that authenticates the user, queries only their
+          own job, and renders five display components — no agents, no mutations.
+        </div>
+
+        <!-- ─────────────────────────────────────────────── -->
+        <h2>1 — What Feature 12 adds to the product</h2>
+
+        <p>Feature 11 gave the Find Jobs table filter, sort, and pagination — but clicking a row did nothing.
+        The table had <code>cursor-pointer</code> styling and no destination.
+        Feature 12 is that destination.</p>
+
+        <p>Open <a href="../context/project-overview.md"><code>context/project-overview.md</code></a>.
+        Under "Job Details Page" it specifies:</p>
+
+        <ul>
+          <li>Full structured job information: title, company, location, salary, job type, date found</li>
+          <li>About the role (the full description)</li>
+          <li>Match score section: score, matched skills, missing skills, match reason</li>
+          <li>Company Research section: empty state + Research Company button (wired in Feature 13)</li>
+          <li>Apply Now button — opens external apply URL in new tab</li>
+        </ul>
+
+        <p>All of this data already exists in the <code>jobs</code> table.
+        Feature 12 adds <em>zero</em> new data — it reads and displays what Features 10 and 10b wrote.
+        That is the correct sequencing: collect, then display.</p>
+
+        <div class="callout">
+          <strong>Review question to ask:</strong>
+          Does this plan depend on data that isn't in the DB yet?
+          If yes, it should come after the feature that writes that data, not before.
+        </div>
+
+        <div class="quiz">
+          <details>
+            <summary>Retrieval check: Where does the job description text (<code>about_role</code>) come from, and when was it written to the DB?</summary>
+            <div class="answer">
+              The Apify actor scrapes it from the JobsDB listing page and returns it as <code>about_role</code>.
+              The find route (<code>app/api/agent/find/route.ts</code>) saves it to the <code>jobs</code> table
+              during Feature 10b's job discovery flow — before Feature 12 ever existed.
+              Feature 12 only reads it.
+            </div>
+          </details>
+        </div>
+
+        <!-- ─────────────────────────────────────────────── -->
+        <h2>2 — Route design: why <code>app/find-jobs/[id]/page.tsx</code></h2>
+
+        <p>Open <a href="../context/architecture.md"><code>context/architecture.md</code></a>.
+        The folder structure section shows:</p>
+
+        <pre><code>app/
+  find-jobs/
+    page.tsx          → /find-jobs (the table)
+    [id]/
+      page.tsx        → /find-jobs/[id] (the detail page)</code></pre>
+
+        <p>The square-bracket folder <code>[id]</code> is Next.js App Router syntax for a dynamic segment.
+        Any URL matching <code>/find-jobs/something</code> (where "something" is any string) renders this page.
+        The string becomes a parameter called <code>id</code>.</p>
+
+        <p>Why this location and not somewhere else?</p>
+        <ul>
+          <li><strong>Nested under <code>find-jobs/</code></strong> — it is a sub-view of the Find Jobs feature. The Back to Jobs link goes to <code>/find-jobs</code>. The URL nesting mirrors the product hierarchy.</li>
+          <li><strong><code>[id]</code> is the DB row UUID</strong> — not a slug, not a sequential number. The UUID is already the job's primary key, so no extra lookup is needed.</li>
+          <li><strong>Server Component by default</strong> — Next.js App Router makes every <code>page.tsx</code> a Server Component unless you add <code>"use client"</code>. Feature 12 needs auth cookies and DB access — both are server concerns. It has zero interactive JavaScript needs. Server Component is correct.</li>
+        </ul>
+
+        <div class="grid">
+          <div class="card">
+            <p class="muted" style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em">Correct</p>
+            <pre><code>app/find-jobs/[id]/page.tsx
+// Server Component
+// Auth + DB in page
+// Props from DB to components</code></pre>
+          </div>
+          <div class="card">
+            <p class="muted" style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em">Wrong</p>
+            <pre><code>app/find-jobs/[id]/page.tsx
+"use client"
+// fetches on client
+// exposes user token to browser</code></pre>
+          </div>
+        </div>
+
+        <div class="quiz">
+          <details>
+            <summary>Retrieval check: If the route were a Client Component that fetched the job via <code>useEffect</code>, what two things would break?</summary>
+            <div class="answer">
+              1. <strong>Auth cookie access</strong> — auth cookies are httpOnly (server-only). A client component cannot read them. You'd need a separate API endpoint just to get the user's session, adding a round trip.
+              <br><br>
+              2. <strong>Security</strong> — you'd have to send the job UUID in a client-side fetch, and you'd need to ensure the API validates <code>user_id</code> — an extra layer that the current approach handles inline in the Server Component, where auth is guaranteed before the DB call.
+            </div>
+          </details>
+        </div>
+
+        <!-- ─────────────────────────────────────────────── -->
+        <h2>3 — <code>force-dynamic</code>: what it means and why it's required</h2>
+
+        <p>Open <a href="../app/find-jobs/[id]/page.tsx"><code>app/find-jobs/[id]/page.tsx</code></a>, line 14:</p>
+
+        <pre><code>export const dynamic = "force-dynamic";</code></pre>
+
+        <p>Next.js App Router tries to pre-render pages at build time when it can.
+        A page that doesn't read dynamic data (cookies, headers, DB) might be rendered to static HTML during <code>npm run build</code>.</p>
+
+        <p>This page <em>cannot</em> be statically generated because:</p>
+        <ol>
+          <li>It reads auth cookies — no session exists at build time</li>
+          <li>It queries per-user data — different content for every user</li>
+          <li>Jobs are added after build — a job saved today would 404</li>
+        </ol>
+
+        <p><code>force-dynamic</code> tells Next.js: skip pre-rendering entirely, render on every request. Without it, Next.js may attempt static generation and fail during <code>npm run build</code> because <code>createInsforgeServer()</code> requires a real request context to read cookies.</p>
+
+        <div class="callout">
+          <strong>Review question to ask:</strong>
+          Does this page read cookies, headers, or per-user DB data?
+          If yes — <code>force-dynamic</code> must be present. If the plan omits it on a page like this, flag it.
+        </div>
+
+        <!-- ─────────────────────────────────────────────── -->
+        <h2>4 — The server data flow, step by step</h2>
+
+        <p>Open <a href="../app/find-jobs/[id]/page.tsx"><code>app/find-jobs/[id]/page.tsx</code></a> and read the full file.
+        Here is the complete flow:</p>
+
+        <pre><code>// Step 1 — resolve the dynamic segment
+const { id } = await params;
+
+// Step 2 — create a server-side DB/auth client
+const insforge = await createInsforgeServer();
+
+// Step 3 — authenticate the user
+const { data: authData, error: authError } =
+  await insforge.auth.getCurrentUser();
+if (authError || !authData.user) redirect("/login");
+
+// Step 4 — query only the current user's job by ID
+const { data: job, error } = await insforge.database
+  .from("jobs")
+  .select("*")
+  .eq("id", id)               // ← the URL segment
+  .eq("user_id", authData.user.id)  // ← security boundary
+  .single();
+
+// Step 5 — 404 if job not found or belongs to another user
+if (error || !job) notFound();
+
+// Step 6 — assert the type (InsForge returns untyped data)
+const typedJob = job as Job; // InsForge returns untyped query data</code></pre>
+
+        <p>Each step has a specific failure mode and handling:</p>
+
+        <table class="ref">
+          <thead><tr><th>Step</th><th>What can go wrong</th><th>What happens</th></tr></thead>
+          <tbody>
+            <tr><td>await params</td><td>Forgot to await (Next.js 16 trap)</td><td><code>id</code> is <code>undefined</code>, all queries return empty, notFound fires</td></tr>
+            <tr><td>getCurrentUser</td><td>Session expired or missing</td><td><code>redirect("/login")</code></td></tr>
+            <tr><td>DB query</td><td>Wrong UUID / belongs to other user</td><td><code>notFound()</code> — 404, not 403</td></tr>
+            <tr><td>DB query</td><td>Network error</td><td><code>notFound()</code> (error is set)</td></tr>
+          </tbody>
+        </table>
+
+        <div class="callout">
+          <strong>Why <code>notFound()</code> for both "wrong user" and "wrong ID"?</strong>
+          A 403 response tells the caller "this record exists but you can't see it." A 404 says "we have no information about this URL." For private per-user data, 404 is the security-correct response — it reveals nothing about whether other users' records exist.
+        </div>
+
+        <h3>The two-filter security pattern</h3>
+
+        <pre><code>.eq("id", id)
+.eq("user_id", authData.user.id)</code></pre>
+
+        <p>Job IDs are UUIDs — 128-bit values that cannot be guessed at random.
+        But they are not secret. They appear in browser history, server logs, shared links, and analytics dashboards.
+        Without the <code>user_id</code> filter, any authenticated user could view another user's job by knowing the UUID.</p>
+
+        <p>With both filters: if the job exists but belongs to a different user,
+        InsForge returns <code>{ data: null, error: { code: 'PGRST116' } }</code>.
+        The code calls <code>notFound()</code>. The unauthorized user sees a 404.</p>
+
+        <div class="quiz">
+          <details>
+            <summary>Retrieval check: This project has Row-Level Security (RLS) on the <code>jobs</code> table. If RLS already prevents unauthorized reads, why is the <code>user_id</code> filter in the application still necessary?</summary>
+            <div class="answer">
+              Defence in depth. RLS is one layer — if it is misconfigured, disabled, or bypassed (via a service-role key in an admin route), the application-level filter still enforces ownership. Two independent enforcement points are more robust than one. The filter costs nothing and provides a safety net for any scenario where RLS is not in effect.
+            </div>
+          </details>
+        </div>
+
+        <!-- ─────────────────────────────────────────────── -->
+        <h2>5 — Next.js 16: <code>params</code> is a Promise</h2>
+
+        <p>Open <a href="../app/find-jobs/[id]/page.tsx"><code>app/find-jobs/[id]/page.tsx</code></a>, lines 16–21:</p>
+
+        <pre><code>export default async function JobDetailsPage({
+  params,
+}: {
+  params: Promise&lt;{ id: string }&gt;;
+}) {
+  const { id } = await params;</code></pre>
+
+        <p>In every Next.js version before 16, <code>params</code> was a plain synchronous object.
+        The pre-16 shape:</p>
+
+        <pre><code>// PRE-16 — compiles in Next.js 16 but is WRONG
+function Page({ params }: { params: { id: string } }) {
+  const id = params.id; // ← undefined at runtime in Next.js 16
+}</code></pre>
+
+        <p>Next.js 16 changed <code>params</code> to be asynchronous.
+        If you read <code>params.id</code> without awaiting, TypeScript does not warn you.
+        You are reading the <code>.id</code> property on a <code>Promise</code> object.
+        That property doesn't exist, so you get <code>undefined</code>.</p>
+
+        <p>What happens with <code>id = undefined</code>?
+        The DB query becomes <code>.eq("id", undefined)</code>,
+        which returns no rows,
+        which triggers <code>notFound()</code>.
+        <strong>Every single job detail URL returns 404.</strong>
+        The bug is completely silent — no TypeScript error, no build error, no test failure.</p>
+
+        <p>This is exactly why <code>AGENTS.md</code> says:</p>
+
+        <blockquote style="border-left:3px solid var(--line);margin:12px 0;padding:4px 16px;color:var(--muted)">
+          "Read <code>node_modules/next/dist/docs/</code> before writing any code. Heed deprecation notices."
+        </blockquote>
+
+        <p>The installed version is the authority. Training data, blog posts, and AI-generated examples all show the pre-16 shape and are wrong for this repo.</p>
+
+        <div class="callout">
+          <strong>Review question to ask:</strong>
+          Does this plan show <code>params: { id: string }</code> (sync) or <code>params: Promise&lt;{ id: string }&gt;</code> (async)?
+          If the plan was written from AI training data rather than the installed docs, it likely shows the sync shape.
+          Flag it. The symptom is universal 404s with no error.
+        </div>
+
+        <div class="quiz">
+          <details>
+            <summary>Retrieval check: Why doesn't TypeScript flag <code>params.id</code> when <code>params</code> is typed as <code>Promise&lt;{ id: string }&gt;</code>?</summary>
+            <div class="answer">
+              Because TypeScript only checks whether a property access is valid according to the type. <code>Promise&lt;{ id: string }&gt;</code> does not have an <code>.id</code> property in its definition, so accessing it returns <code>undefined</code> — but TypeScript does not <em>error</em> on reading an undefined property on an object type unless you enable strict null checks <em>and</em> the type explicitly excludes that key. In practice, TypeScript's inference allows property access on objects and returns the type of the declared properties — accessing a non-existent key yields <code>undefined</code> which is assignable to many types. The compiler does not see this as a type error.
+            </div>
+          </details>
+        </div>
+
+        <!-- ─────────────────────────────────────────────── -->
+        <h2>Summary</h2>
+
+        <ul>
+          <li>Feature 12 displays data Features 10/10b already wrote — no new agent calls or DB mutations.</li>
+          <li>The route <code>app/find-jobs/[id]/page.tsx</code> is a Server Component — correct for auth, DB access, and zero client interactivity.</li>
+          <li><code>force-dynamic</code> prevents Next.js from trying to pre-render a per-user auth-gated page.</li>
+          <li>The two-filter query (<code>.eq("id", id).eq("user_id", ...)</code>) is the security boundary — always scope to both ID and user.</li>
+          <li>Next.js 16 <code>params</code> is a Promise — must be awaited. TypeScript won't catch the mistake. Read the installed docs.</li>
+        </ul>
+
+        <p class="muted" style="font-size:13px;margin-top:32px">
+          <strong>Next:</strong>
+          <a href="0008-feature-12-type-contract-components.html">Lesson 0008 — The Type Contract and Component Architecture</a><br>
+          <strong>Ask:</strong> If anything above is unclear, ask Claude to explain it in the context of this file.
+        </p>
+      </article>
+    </main>
+  </body>
+</html>
