@@ -52,7 +52,11 @@ export default async function JobDetailsPage({
           <JobInfo job={typedJob} />
           <MatchScore job={typedJob} />
           <JobDescription aboutRole={typedJob.about_role} />
-          <CompanyResearch company={typedJob.company} />
+          <CompanyResearch
+            jobId={typedJob.id}
+            company={typedJob.company}
+            initialResearch={typedJob.company_research}
+          />
           <JobActions
             company={typedJob.company}
             externalApplyUrl={typedJob.external_apply_url}

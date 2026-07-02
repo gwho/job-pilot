@@ -268,9 +268,8 @@ All environment variables defined in `.env.local` for development. Never hardcod
 | `NEXT_PUBLIC_INSFORGE_URL`      | lib/insforge-client.ts |
 | `NEXT_PUBLIC_INSFORGE_ANON_KEY` | lib/insforge-client.ts |
 | `NEXT_PUBLIC_APP_URL`           | app/actions/auth.ts (OAuth redirectTo) |
-| `BROWSERBASE_API_KEY`           | lib/browserbase.ts     |
-| `BROWSERBASE_PROJECT_ID`        | lib/browserbase.ts     |
-| `OPENROUTER_API_KEY`            | agent/ functions       |
+| `HYPERBROWSER_API_KEY`          | lib/hyperbrowser.ts    |
+| `OPENROUTER_API_KEY`            | agent/ functions, lib/stagehand.ts |
 | `ADZUNA_APP_ID`                 | lib/adzuna.ts          |
 | `ADZUNA_APP_KEY`                | lib/adzuna.ts          |
 | `NEXT_PUBLIC_POSTHOG_KEY`       | instrumentation-client.ts, lib/posthog-server.ts |
@@ -313,7 +312,7 @@ import { Button } from "../../../components/ui/button";
 
 - No comments explaining what the code does — code must be self-explanatory
 - Comments only for why — explaining a non-obvious decision
-- Agent functions may have a brief comment explaining the Browserbase or Stagehand strategy
+- Agent functions may have a brief comment explaining the Hyperbrowser or Stagehand strategy
 - Never leave TODO comments in committed code
 
 ---
@@ -329,8 +328,8 @@ Never install a new package without a clear reason. Before installing anything c
 Approved dependencies for this project:
 
 - `@insforge/sdk` — InsForge client (SSR helpers via the `@insforge/sdk/ssr` and `@insforge/sdk/ssr/middleware` subpaths)
-- `@browserbasehq/sdk` — Browserbase sessions
-- `@browserbasehq/stagehand` — AI browser control
+- `@hyperbrowser/sdk` — Hyperbrowser cloud browser sessions
+- `@browserbasehq/stagehand` — AI browser control (Stagehand connects to Hyperbrowser via CDP)
 - `openai` — Nemotron via OpenRouter's OpenAI-compatible endpoint (`baseURL: https://openrouter.ai/api/v1`)
 - `posthog-js` — PostHog browser client
 - `posthog-node` — PostHog server client

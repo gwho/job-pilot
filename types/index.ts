@@ -64,6 +64,7 @@ export interface CompanyResearchDossier {
   smartQuestions: string[]
   interviewPrep: string[]
   sources: string[]
+  researchedAt?: string
 }
 
 

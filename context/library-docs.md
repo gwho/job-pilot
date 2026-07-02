@@ -427,34 +427,56 @@ const jobRecord = {
 
 ---
 
-## Browserbase
+## Hyperbrowser
 
-**Check first:** Check AGENTS.md for an installed Browserbase skill. If a Browserbase MCP server is configured — use it. The skill/MCP will have the latest session management and API patterns.
+**Check first:** Check AGENTS.md for an installed Hyperbrowser skill. If a Hyperbrowser MCP server is configured — use it.
 
 ### Session Creation — Company Research
 
 ```typescript
-import Browserbase from "@browserbasehq/sdk";
+import { Hyperbrowser } from "@hyperbrowser/sdk";
+import type { SessionDetail } from "@hyperbrowser/sdk/types";
 
-const bb = new Browserbase({ apiKey: process.env.BROWSERBASE_API_KEY! });
+const client = new Hyperbrowser({ apiKey: process.env.HYPERBROWSER_API_KEY! });
 
 // Single session for company research — sequential page visits
-const session = await bb.sessions.create({
-  projectId: process.env.BROWSERBASE_PROJECT_ID!,
-  timeout: 120, // 2 minute session — visits 3-4 pages max
+const session = await client.sessions.create({
+  useStealth: true,
+  adblock: true,
+  acceptCookies: true,
+  timeoutMinutes: 2, // covers homepage + 3 sub-pages
 });
+// session.wsEndpoint — CDP WebSocket URL (pass to Stagehand)
+// session.liveUrl    — viewable URL for debugging only, never stored or shown in UI
 ```
 
-**Important — Browserbase runs independently from your Next.js server:**
-Browserbase sessions run on Browserbase's cloud infrastructure, not inside your Next.js API route. The API route triggers the Browserbase session and returns a response while the session continues running independently on Browserbase's platform. Do not add `maxDuration` or any timeout configuration to Next.js API routes to accommodate Browserbase session length.
+### Session Cleanup
+
+Always clean up in `finally` using null-guards:
+
+```typescript
+let stagehand: Stagehand | null = null;
+let session: SessionDetail | null = null;
+let client: HyperbrowserClient | null = null;
+
+finally {
+  if (stagehand) await stagehand.close();
+  if (client && session) await client.sessions.stop(session.id);
+}
+```
+
+### Required environment
+
+- `HYPERBROWSER_API_KEY` — server-only, never prefix with `NEXT_PUBLIC_`
+- Only `lib/hyperbrowser.ts` initializes the client
 
 **Rules:**
 
-- Always use single sessions — never parallel sessions (free plan limit)
-- Session timeout is 120 seconds — sufficient for 3-4 page visits
-- Always end sessions cleanly — call stagehand.close() when done
-- Project ID always from `process.env.BROWSERBASE_PROJECT_ID` — never hardcode
-- Browserbase client lives in `lib/browserbase.ts` — always import from there
+- Always use single sessions — one per research run
+- Session timeout is 2 minutes — sufficient for homepage + 3 sub-pages
+- Always stop session in `finally` — use null-guards for partial initialization
+- API key only in `lib/hyperbrowser.ts` — never read directly in agent or route code
+- Never store `session.liveUrl` in the DB or expose it in the UI
 
 ---
 
@@ -462,46 +484,48 @@ Browserbase sessions run on Browserbase's cloud infrastructure, not inside your 
 
 **Check first:** Check AGENTS.md for an installed Stagehand skill. If a Stagehand MCP server is configured — use it. The skill/MCP will have the latest act() and extract() patterns.
 
-### Initialisation
+### Initialisation (with Hyperbrowser CDP)
 
 ```typescript
 import { Stagehand } from "@browserbasehq/stagehand";
 
+// session.wsEndpoint comes from createHyperbrowserSession() in lib/hyperbrowser.ts
 const stagehand = new Stagehand({
-  env: "BROWSERBASE",
-  apiKey: process.env.BROWSERBASE_API_KEY!,
-  projectId: process.env.BROWSERBASE_PROJECT_ID!,
-  browserbaseSessionID: session.id,
-  model: { modelName: "nvidia/nemotron-3-ultra-550b-a55b:free", apiKey: process.env.OPENROUTER_API_KEY!, baseURL: "https://openrouter.ai/api/v1" },
+  env: "LOCAL",                                          // "LOCAL" = bring your own browser via CDP
+  localBrowserLaunchOptions: { cdpUrl: session.wsEndpoint },
+  model: {
+    // "openai/" prefix tells Stagehand to route via its OpenAI provider to https://openrouter.ai/api/v1
+    modelName: "openai/nvidia/nemotron-3-ultra-550b-a55b:free",
+    apiKey: process.env.OPENROUTER_API_KEY!,
+    baseURL: "https://openrouter.ai/api/v1",
+  },
   disablePino: true,
 });
 
 await stagehand.init();
-const page = stagehand.context.activePage()!;
+const page = stagehand.context.activePage(); // Page | undefined
+if (!page) throw new Error("No active page after Stagehand init");
 ```
 
 ### extract()
 
+`extract()` takes positional args: `(instruction: string, schema: ZodSchema)`. Do NOT pass an options object `{ instruction, schema }`.
+
 ```typescript
 import { z } from "zod";
 
-const result = await stagehand.extract({
-  instruction:
-    "Extract the company overview, main product description, and any technology mentions from this page.",
-  schema: z.object({
-    companyOverview: z.string().optional(),
-    mainProduct: z.string().optional(),
-    techMentions: z.array(z.string()).optional(),
-    navLinks: z
-      .array(
-        z.object({
-          label: z.string(),
-          url: z.string(),
-        }),
-      )
-      .optional(),
-  }),
+const PageSchema = z.object({
+  companyOverview: z.string().optional(),
+  mainProduct: z.string().optional(),
+  techMentions: z.array(z.string()).optional(),
+  navLinks: z.array(z.object({ label: z.string(), url: z.string() })).optional(),
 });
+
+const result = await stagehand.extract(
+  "Extract the company overview, main product description, and any technology mentions from this page.",
+  PageSchema,
+);
+// result is typed as z.infer<typeof PageSchema>
 ```
 
 ### act()
@@ -516,153 +540,6 @@ try {
   await logAgentError(jobId, null, error);
 }
 ```
-
-## Company Research Section
-
-Replace the existing Stagehand "Company Research Pattern" section in library-docs.md with this:
-
----
-
-### Company Research Pattern
-
-Three-step process: homepage extraction → sub-page extraction → GPT-4o synthesis.
-Job description and user profile come from DB — never re-fetch what you already have.
-Browser's only job is the company website.
-
-```typescript
-// Step 1 — Homepage extraction
-const homepageData = await stagehand.extract({
-  instruction:
-    "This is a company's homepage. Capture what the company actually does, who it's for, and any concrete signals (funding, customers, scale, mission, recent launches). Then find the internal links most worth visiting to research them as an employer.",
-  schema: z.object({
-    oneLiner: z.string().describe("What the company does in one sentence"),
-    productSummary: z
-      .string()
-      .describe("What they build/sell and who it's for"),
-    signals: z
-      .array(z.string())
-      .describe("Funding, notable customers, scale, mission, recent news"),
-    pageLinks: z
-      .array(
-        z.object({
-          url: z.string(),
-          kind: z.enum([
-            "about",
-            "careers",
-            "blog",
-            "engineering",
-            "product",
-            "team",
-            "other",
-          ]),
-        }),
-      )
-      .describe("Internal links worth visiting"),
-  }),
-});
-
-// If oneLiner and productSummary are empty — wrong site or parked domain
-// Skip to synthesis with job description and profile only
-if (!homepageData.oneLiner && !homepageData.productSummary) {
-  await stagehand.close();
-  // proceed to synthesis with empty companyResearch
-}
-
-// Step 2 — Sub-page extraction (max 3, prefer about/blog/engineering/product over careers)
-const subPageData = await stagehand.extract({
-  instruction:
-    "Extract substance that helps a candidate understand this company before applying: what they do, their values and how they work, the specific technologies and tools they use, notable projects or customers, and how the team operates. Ignore nav, footers, cookie banners, and generic marketing copy.",
-  schema: z.object({
-    keyPoints: z.array(z.string()),
-    technologies: z
-      .array(z.string())
-      .describe("Specific languages, frameworks, tools, platforms"),
-    valuesOrCulture: z
-      .array(z.string())
-      .describe("Stated values, working style, team norms"),
-    notable: z
-      .array(z.string())
-      .describe("Customers, funding, scale, projects, awards"),
-  }),
-});
-
-// Step 3 — Nemotron synthesis (after browser closes)
-// Feed three data sources: company research + job from DB + profile from DB
-const systemPrompt = `You are a sharp career strategist preparing a candidate to apply for a specific role. You are given (a) research collected from the company's own website, (b) the job posting, and (c) the candidate's profile. Produce a concise, concrete briefing that gives this specific candidate an edge for this specific role.
-
-Rules:
-- Ground every company claim in the provided research or job posting. Never invent funding, customers, headcount, or facts. If research was thin, infer carefully from the job posting and say what's inferred.
-- Be specific to THIS candidate. Connect their actual skills and past work to this company's stack, product, and values. No generic advice that would apply to anyone.
-- Turn the candidate's missing skills into a strategy: how to frame the gap honestly and what adjacent experience to lean on.
-- Talking points and questions must reference real things from the research, the kind of detail that signals the candidate did their homework.
-- Keep every item tight: one or two sentences. No fluff.
-
-Return ONLY valid JSON matching this shape:
-{
-  "companyOverview": string,
-  "techStack": string[],
-  "culture": string[],
-  "whyThisRole": string,
-  "yourEdge": string[],
-  "gapsToAddress": string[],
-  "smartQuestions": string[],
-  "interviewPrep": string[],
-  "sources": string[]
-}`;
-
-const userPrompt = `COMPANY RESEARCH (from their website):
-${JSON.stringify(companyResearch)}
-
-JOB POSTING:
-Title: ${job.title}
-Company: ${job.company}
-Description: ${job.description}
-Matched skills (already computed): ${job.matched_skills.join(", ")}
-Missing skills (already computed): ${job.missing_skills.join(", ")}
-
-CANDIDATE PROFILE:
-Current title: ${profile.current_title}
-Experience: ${profile.years_experience} years, level ${profile.experience_level}
-Skills: ${profile.skills.join(", ")}
-Work history: ${JSON.stringify(profile.work_experience)}`;
-
-const response = await openai.chat.completions.create({
-  model: "nvidia/nemotron-3-ultra-550b-a55b:free",
-  response_format: { type: "json_object" },
-  temperature: 0.4,
-  messages: [
-    { role: "system", content: systemPrompt },
-    { role: "user", content: userPrompt },
-  ],
-});
-```
-
-**Dossier fields:**
-
-| Field           | Type     | Purpose                                             |
-| --------------- | -------- | --------------------------------------------------- |
-| companyOverview | string   | What the company does                               |
-| techStack       | string[] | Technologies they use                               |
-| culture         | string[] | Values and working style                            |
-| whyThisRole     | string   | Why this role exists                                |
-| yourEdge        | string[] | Specific links between THIS candidate and this role |
-| gapsToAddress   | string[] | Missing skills reframed as strategy                 |
-| smartQuestions  | string[] | Questions that show real research                   |
-| interviewPrep   | string[] | Topics to prepare for this role                     |
-| sources         | string[] | Pages the company info came from                    |
-
-**Rules:**
-
-- Always use `extract()` with a Zod schema — never parse raw HTML or use regex
-- Always wrap every `act()` and `extract()` in try/catch
-- Always call `await stagehand.close()` when done — ends the Browserbase session
-- Model is always `nvidia/nemotron-3-ultra-550b-a55b:free` — never use other models
-- Temperature is `0.4` for synthesis — grounded but flexible enough to make real connections
-- Max 3 sub-pages — never exceed this on free plan
-- Always close session in finally block — never leave sessions open even if research fails
-- Job description and profile always come from DB — never re-fetch via browser
-- If browser research returns empty — still run synthesis with job + profile only
-- yourEdge, gapsToAddress, and smartQuestions are the most valuable fields — never skip them
 
 ## NVIDIA Nemotron 3 Ultra (via OpenRouter)
 
@@ -703,13 +580,14 @@ const result = JSON.parse(response.choices[0].message.content!);
 
 **Temperature settings:**
 
-- `0.3` — matching, scoring, extraction, research synthesis — deterministic results
+- `0.3` — matching, scoring, extraction — deterministic results
+- `0.4` — company research synthesis — grounded but flexible enough to make real connections
 - `0.7` — resume generation — natural variation
 
 **Max tokens:**
 
 - Job matching + scoring: `300`
-- Company research synthesis: `800`
+- Company research synthesis: `2000`
 - Resume generation: `1000`
 - Profile extraction from resume: `800`
 

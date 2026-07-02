@@ -6,9 +6,9 @@ Update this file after every completed feature. Any AI agent reading this should
 
 ## Current Status
 
-**Phase:** Phase 4 — Job Details Page
-**Last completed:** 12 Job Details Page — Full UI
-**Next:** 13 Company Research Agent
+**Phase:** Phase 5 — Dashboard
+**Last completed:** 13 Company Research Agent
+**Next:** 14 Dashboard Page — Full UI
 
 ---
 
@@ -38,7 +38,7 @@ Update this file after every completed feature. Any AI agent reading this should
 ### Phase 4 — Job Details Page
 
 - [x] 12 Job Details Page — Full UI
-- [ ] 13 Company Research Agent
+- [x] 13 Company Research Agent
 
 ### Phase 5 — Dashboard
 
