@@ -6,7 +6,7 @@
 | ------------------------------ | ------------------------ | ------------------------------------------------ |
 | Framework                      | Next.js 16 (App Router)  | Full stack framework                             |
 | Auth + DB + Storage + Realtime | InsForge                 | Entire backend                                   |
-| Cloud browser                  | Browserbase              | Company research — browsing company public pages |
+| Cloud browser                  | Hyperbrowser             | Company research — managed cloud browser sessions |
 | AI browser control             | Stagehand                | Company page interaction and content extraction  |
 | Job Discovery                  | Adzuna API               | Job search and discovery                         |
 | AI model                       | NVIDIA Nemotron 3 Ultra (via OpenRouter) | Matching, research synthesis, extraction |
@@ -62,7 +62,7 @@
 │           └── extract/route.ts           → Extract profile data from uploaded resume PDF
 ├── agent/
 │   ├── adzuna.ts                          → Adzuna API job discovery + Nemotron scoring
-│   ├── research.ts                        → Company research — Browserbase + Stagehand + Nemotron
+│   ├── research.ts                        → Company research — Hyperbrowser + Stagehand + Nemotron
 │   ├── matcher.ts                         → Nemotron job matching logic
 │   ├── extractor.ts                       → Nemotron job description extraction + structuring
 │   └── types.ts                           → Agent-specific TypeScript types
@@ -101,8 +101,8 @@
 ├── lib/
 │   ├── insforge-client.ts                 → InsForge browser client instance
 │   ├── insforge-server.ts                 → InsForge server client
-│   ├── browserbase.ts                     → Browserbase session creation + management
-│   ├── stagehand.ts                       → Stagehand initialisation with Browserbase session
+│   ├── hyperbrowser.ts                    → Hyperbrowser session creation + management
+│   ├── stagehand.ts                       → Stagehand initialisation with Hyperbrowser CDP endpoint
 │   ├── adzuna.ts                          → Adzuna API client
 │   ├── posthog-client.ts                  → PostHog browser client
 │   ├── posthog-server.ts                  → PostHog server client
@@ -167,9 +167,9 @@ API route in app/api/agent/research
         ↓
 Calls agent/research.ts
         ↓
-Single Browserbase session opens with Stagehand
+Single Hyperbrowser session opens; Stagehand connects via CDP
         ↓
-Navigates to company homepage + sub pages
+Navigates to company homepage + up to 3 sub-pages
         ↓
 Nemotron synthesizes dossier from extracted content
         ↓
@@ -339,14 +339,29 @@ OAuth in SSR is a server-driven PKCE flow, not a client-side token-in-URL flow:
 
 ---
 
-## Browserbase Session Pattern
+## Hyperbrowser Session Pattern
 
 ```typescript
 // Company research session — single session, sequential page visits
-const session = await bb.sessions.create({
-  projectId: process.env.BROWSERBASE_PROJECT_ID!,
-  timeout: 120, // 2 minute session — visits 3-4 pages max
+import { Hyperbrowser } from "@hyperbrowser/sdk";
+
+const client = new Hyperbrowser({ apiKey: process.env.HYPERBROWSER_API_KEY! });
+const session = await client.sessions.create({
+  useStealth: true,
+  adblock: true,
+  acceptCookies: true,
+  timeoutMinutes: 2, // visits homepage + max 3 sub-pages
 });
+// session.wsEndpoint — CDP WebSocket URL for Stagehand
+// session.liveUrl    — viewable browser URL (log only, never stored or shown in UI)
+```
+
+Always stop the session in `finally`:
+```typescript
+finally {
+  if (stagehand) await stagehand.close();           // Stagehand first
+  if (client && session) await client.sessions.stop(session.id); // Hyperbrowser second
+}
 ```
 
 ---
@@ -377,40 +392,38 @@ const data = await response.json();
 ## Company Research Pattern
 
 ```typescript
-// Single session — visits company homepage and sub pages sequentially
+// Stagehand connects to Hyperbrowser via CDP — env: "LOCAL" means "supply your own browser"
+import { Stagehand } from "@browserbasehq/stagehand";
+
 const stagehand = new Stagehand({
-  env: "BROWSERBASE",
-  apiKey: process.env.BROWSERBASE_API_KEY!,
-  projectId: process.env.BROWSERBASE_PROJECT_ID!,
-  browserbaseSessionID: session.id,
-  modelName: "nvidia/nemotron-3-ultra-550b-a55b:free",
-  modelClientOptions: { apiKey: process.env.OPENROUTER_API_KEY!, baseURL: "https://openrouter.ai/api/v1" },
+  env: "LOCAL",
+  localBrowserLaunchOptions: { cdpUrl: session.wsEndpoint },
+  model: {
+    // "openai/" prefix tells Stagehand to route via its OpenAI provider to https://openrouter.ai/api/v1
+    modelName: "openai/nvidia/nemotron-3-ultra-550b-a55b:free",
+    apiKey: process.env.OPENROUTER_API_KEY!,
+    baseURL: "https://openrouter.ai/api/v1",
+  },
+  disablePino: true,
 });
 
 await stagehand.init();
-const page = stagehand.page;
+const page = stagehand.context.activePage()!;
 
-// Clean company name and construct homepage URL
-const cleanName = companyName
-  .replace(/\s*(Inc\.?|LLC|Ltd\.?|Corp\.?|Co\.?).*$/i, "")
-  .trim()
-  .toLowerCase()
-  .replace(/\s+/g, "");
-
-const homepageUrl = `https://www.${cleanName}.com`;
+// Homepage URL: parse from external_apply_url ?? source_url → follow redirects → normalize root domain
+// Fallback: construct from company name (https://www.${cleanName}.com)
 
 // Navigate and extract — graceful fallback if page not found
 try {
   await page.goto(homepageUrl);
   await page.waitForLoadState("networkidle");
-  const content = await stagehand.extract({ instruction: "..." });
+  const content = await stagehand.extract(instruction, ZodSchema);
 } catch (error) {
   // Log and continue — Nemotron will synthesize from what was found
-  await logAgentError(jobId, error);
+  await logAgentError(userId, jobId, String(error));
 }
 
-// Always close session when done
-await stagehand.close();
+// Always close in finally — Hyperbrowser session stopped after
 ```
 
 ---
@@ -426,7 +439,7 @@ Rules the AI agent must never violate:
 - No hardcoded hex values or raw Tailwind color classes in components — use CSS variables from ui-tokens.md.
 - Every Stagehand action is wrapped in try/catch. Failures are logged to agent_logs, never thrown to crash the run.
 - Company research always returns a dossier — even if browser research fails, Nemotron synthesizes from company name and job description alone. Never return empty.
-- Browserbase sessions are always closed with stagehand.close() when done — never leave sessions open.
+- Hyperbrowser sessions are always cleaned up in `finally`: `stagehand.close()` first, then `client.sessions.stop(session.id)`. Use null-guards — partial initialization must not cause unhandled errors.
 - Always scope InsForge queries to the current user_id — never query without a user filter.
 - Adzuna API always includes category=it-jobs — never search without this filter.
 - jobs.source is always 'search' or 'url' — never any other value.

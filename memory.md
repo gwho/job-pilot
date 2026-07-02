@@ -1,57 +1,79 @@
-# Memory — Debugging Session: Repeated-Search Pagination Fix + Tutorial 22
+# Memory — Feature 13 Complete + Full Documentation Suite
 
-Last updated: 2026-06-30
+Last updated: 2026-07-02
 
 ## What was built
 
-### Repeated-search pagination fix
+### Feature 13 implementation (fully complete)
 
-- `__tests__/find-jobs/repeated-search.test.ts` — NEW: 5-test regression suite exercising the `POST` route handler directly. All 5 were RED before the fix, GREEN after. Key infrastructure: `createChain(resolvedValue)` thenable mock helper, `buildInsforgeMock(existingJobs, insertResult)` per-table call-count mock, two-call `discoverJobsDbJobs` mock sequence (page1 returns all existing, page1+2 returns 10 new).
+- `lib/hyperbrowser.ts` — Hyperbrowser client + session factory; exports `HyperbrowserSession` type alias
+- `lib/stagehand.ts` — Stagehand factory initialised against Hyperbrowser CDP endpoint; `disablePino: true`
+- `agent/research.ts` — full research orchestration: `deriveHomepageUrl()`, `conductBrowserResearch()`, `synthesizeDossier()`, public `researchCompany(jobId, userId)`; Zod schemas for homepage/subpage extraction
+- `app/api/agent/research/route.ts` — POST handler; auth guard → body validation → `researchCompany()` → isolated PostHog capture → response
+- `components/job-details/CompanyResearch.tsx` — rewritten from placeholder to full `"use client"` component; 4 UI states (empty, loading, error, dossier); source URLs clickable for `http://`/`https://` strings with `rel="noopener noreferrer"`
+- `app/find-jobs/[id]/page.tsx` — modified: passes `jobId` and `initialResearch` props to `CompanyResearch`
+- `types/index.ts` — added `researchedAt?: string` to `CompanyResearchDossier`
+- `.env.local` — added `HYPERBROWSER_API_KEY`
+- `.env.example` — created with all env var placeholders
+- Context files updated: `context/architecture.md`, `context/build-plan.md`, `context/library-docs.md`, `context/code-standards.md`, `CLAUDE.md` — all Browserbase refs replaced with Hyperbrowser
 
-- `app/api/agent/find/route.ts` — MODIFIED (pagination loop fix):
-  - Removed `maxPages?: number` from body type (client never sent it)
-  - Moved `existingByUrl` DB query BEFORE the actor call (was after)
-  - Replaced single `discoverJobsDbJobs` call with fetch-until-enough loop (`TARGET_NEW = 10`, `MAX_PAGES = 5`)
-  - Renamed `jobsDbJobs` → `allActorJobs` on the dedup filter line
-  - Everything from dedup step onward unchanged
+### Feature 13 project-review fixes (post-diagnosing-bugs session)
 
-### Session docs + plan + tutorial
+- `app/api/agent/research/route.ts` — PostHog isolated in its own try/catch; `company` added to `company_researched` event from `researchCompany()` return value
+- `agent/research.ts` — return type changed to `Promise<{ dossier: CompanyResearchDossier; company: string | null }>` to surface company without a second DB query
+- `context/architecture.md` — model name fixed: `"openai/nvidia/nemotron-3-ultra-550b-a55b:free"`
+- `context/library-docs.md` — model name fixed; corrupt editorial block (lines 543-689) deleted; max_tokens updated 800→2000; temperature split documented (0.3 matching, 0.4 synthesis)
 
-- `docs/diagnosing-bugs/find-jobs-repeated-search/` — NEW folder: `feedback-loop.md` (what happened), `reasoning.md` (why each decision), `ai-discussion-topics.md` (21 questions in 5 groups)
-- `docs/plan/repeated-search-pagination/plan.md` — NEW: exact copy of approved plan file
-- `docs/tutorials/22-find-jobs-repeated-search/README.md` — NEW: 7-part tutorial covering seam selection, actor pagination model, existingByUrl snapshot, fetch-until-enough loop, thenable mock, per-table call counting; all 21 discussion questions woven in as checkpoints
+### Regression tests
+
+- `__tests__/api/agent/research.test.ts` — NEW: 3 tests covering PostHog isolation (throws → success:true still returned) and company property derivation (from `researchCompany()` return, not client body; null→"")
+- 45/45 tests passing (up from 42)
+
+### Documentation
+
+- `docs/diagnosing-bugs/13-company-research-agent/` — diagnosis.md, resolution.md, ai-discussion-topics.md
+- `docs/project-review/13-company-research-agent/` — review.md, findings.md, ai-discussion-topics.md
+- `docs/implement/13-company-research-agent/` — record.md, principles.md, ai-discussion-topics.md
+- `docs/tdd/01-research-route-regression/` — record.md, principles.md, ai-discussion-topics.md
+- `docs/plan/13-company-research-agent/` — plan.md, explanation.md, ai-discussion-topics.md (created earlier)
+- `docs/tutorials/24-company-research-agent/README.md` — Tutorial 24: CDP, Stagehand, RAII, fallback chains
+- `docs/tutorials/25-company-research-agent-review-fixes/README.md` — Tutorial 25: analytics isolation, return type extension, context file drift
+- `docs/tutorials/26-research-route-regression-tdd/README.md` — Tutorial 26: module mocking, vi.mock() hoisting, partial matchers
+- `context/ui-registry.md` — CompanyResearch entry updated with sources-as-links pattern
 
 ## Decisions made
 
-- **Pagination is server-driven, not client-controlled.** `maxPages` removed from the request body. Client sends `jobTitle` and `location` only. Budget constants (`TARGET_NEW`, `MAX_PAGES`) live server-side where cost decisions belong.
-- **`existingByUrl` built once before the loop.** One DB query, zero per-iteration round-trips. Snapshot is immutable during the loop because no DB inserts happen inside it.
-- **Actor always starts at page 1.** Each call with `maxPages=N` re-fetches pages 1..N cumulative (actor deduplicates via `seenUrls` within a run). The loop pays for page-1 re-fetches; there is no way to start the actor mid-stream without actor changes.
-- **Two-phase error handling: `break` then check after loop.** Re-throwing inside `catch` would bypass the specific "Job search failed" message and `agent_runs.status = "failed"` write, falling through to the generic outer catch.
-- **Per-table call counting in DB mock.** Resilient to fix-induced reordering between RED and GREEN states. Absolute call-order mocking would have broken the test.
+- **`researchCompany()` returns `{ dossier, company }`** — not just the dossier. Avoids a second DB query in the route for the company name. Company is used only in the PostHog event.
+- **PostHog in isolated try/catch** — analytics failure must never change the HTTP status. PostHog is a side effect; research success is the core operation.
+- **Stagehand model name format** — `"openai/nvidia/nemotron-3-ultra-550b-a55b:free"` for Stagehand (needs `openai/` prefix to route via its OpenAI provider); `"nvidia/nemotron-3-ultra-550b-a55b:free"` for direct OpenAI client in `synthesizeDossier()` (different contexts, different formats — both correct).
+- **Source URLs guarded by `http://`/`https://` prefix** — not `new URL()` parsing; prefix check is O(1) with no failure mode for non-URL strings.
+- **`max_tokens: 2000`** for company research synthesis — 9-field schema worst case is ~1000-1400 tokens; 2000 gives 1.5-2x headroom.
+- **Temperature split** — 0.3 for matching/extraction, 0.4 for synthesis.
 
 ## Problems solved
 
-- **Repeated search always returned "all already saved"** — root cause: route called `discoverJobsDbJobs` with `maxPages=1` (default) every time. Actor always starts at page 1. After the first search, all page-1 jobs were in DB → `records.length === 0` → Path A every time. Fix: fetch-until-enough loop.
-- **TypeScript error after first edit (`maxPages` still referenced)** — expected; fixed by the second edit replacing the entire actor call block with the loop.
-- **`JobsDbJob` declared but never read** — caused by using `import("@/agent/jobsdb").JobsDbJob[]` inline instead of the static import. Fixed by using the statically imported type.
+- **Stagehand `UnsupportedAISDKModelProviderError`** — `"nvidia/..."` parsed as unsupported sub-provider. Fix: `"openai/nvidia/..."`. Stagehand splits at first `/`; `"openai"` is a supported provider.
+- **Nemotron JSON truncation** — `max_tokens: 800` cut the 9-field JSON mid-field. Fix: `max_tokens: 2000`.
+- **Corrupt editorial note in `library-docs.md`** — lines 543-689 contained an instruction "Replace the existing section with this:" appended as document content. Also promoted the old `stagehand.extract({ instruction, schema })` object form (wrong; correct form is positional). Deleted with Python line arithmetic.
+- **PostHog inside main try** — moved to isolated try/catch so analytics failure doesn't kill a successful research response.
+- **Missing `company` on PostHog event** — `code-standards.md` requires `{ userId, jobId, company }`. Added via return type change.
 
 ## Current state
 
-- **42 Vitest tests passing** (`npm run test:run`) — 37 pre-existing + 5 new regression tests
-- **Build clean** (`npm run build`)
-- Actor build `0.1.7` still deployed and GREEN
-- Teaching workspace: 22 tutorials complete (0001–0022), lessons 0001–0005
-- Feature 12 (Job Details Page) is the next feature in `context/build-plan.md`
+- **Feature 13 fully complete** — implementation working, all 8 project-review findings resolved, tests passing
+- **Build clean** — `npm run build` passes
+- **45/45 Vitest tests passing**
+- Feature 14 is next in `context/build-plan.md`
+- Teaching workspace: 26 tutorials, lessons up through Feature 12 teach series
 
 ## Next session starts with
 
-Run `/remember restore`, then begin **Feature 12 — Job Details Page**. Start with `/architect feature 12` before writing any code.
+Run `/remember restore`, check `context/build-plan.md` to confirm Feature 14, then `/architect Feature 14` before any code.
 
 ## Open questions
 
-- **`catch` path still silent** — `handleSearch`'s `catch` block only calls `console.error` on network errors (fetch throws). Needs `setSearchStatus({ message: "Network error...", isError: true })` + test with `mockRejectedValueOnce`. Intentionally deferred.
-- **GitHub Issue #19** — `job_found` PostHog event fires only for `match_score >= 70`. Fix in `app/api/agent/find/route.ts` — deferred until before Feature 17.
-- **DB-level race condition** — two concurrent `/api/agent/find` requests from same user could both insert the same jobs before either sees `existingByUrl`. Needs `UNIQUE (user_id, source_url)` constraint. Low-frequency; deferred.
+- **`catch` path still silent** — `handleSearch` `catch` block only calls `console.error`. Needs `setSearchStatus({ message: "Network error...", isError: true })`. Deferred.
+- **GitHub Issue #19** — `job_found` PostHog event fires only for `match_score >= 70`. Fix in `app/api/agent/find/route.ts`. Deferred until before Feature 17.
+- **DB-level race condition** — concurrent `/api/agent/find` requests from same user could insert duplicate jobs. Needs `UNIQUE (user_id, source_url)`. Deferred.
 - **JobsDB session expiry** — re-capture needed ~mid-July 2026. Run `node scripts/capture-jobsdb-session.mjs`.
-- **"New this search" row tagging** — showing which rows came from the current `run_id` would clarify history vs current-search split. Deferred.
-- **`APIFY_SESSION_STORE_ID` in `.env.local`** — only used by the capture script, not the Next.js app. Could be removed once workflow is stable.
+- **`not-found.tsx`** — custom 404 page absent. Minor; deferred.

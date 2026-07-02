@@ -521,16 +521,24 @@ Last updated: 2026-07-01 (Feature 12)
 ### CompanyResearch
 
 File: `components/job-details/CompanyResearch.tsx`
-Last updated: 2026-07-01 (Feature 12 — empty state only)
+Last updated: 2026-07-02 (Feature 13 — full client component)
 
 | Property           | Class / Value |
 | ------------------ | ------------- |
 | Card               | `bg-surface border border-border rounded-2xl p-6 shadow-sm` |
 | Header row         | `flex items-center justify-between mb-6` |
-| Research button    | `inline-flex items-center gap-2 bg-accent text-accent-foreground text-sm font-medium rounded-md px-4 py-2 opacity-50 cursor-not-allowed` (disabled in Feature 12) |
+| Research button    | `inline-flex items-center gap-2 bg-accent text-accent-foreground text-sm font-medium rounded-md px-4 py-2 hover:bg-accent-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed` |
+| Error banner       | `flex items-start gap-2 bg-error/10 border border-error/20 rounded-lg p-3 mb-4` |
+| Tech stack badge   | `bg-info-light text-info-dark text-xs font-medium px-2.5 py-1 rounded-full` |
+| Bullet dot (culture) | `text-text-muted shrink-0 mt-0.5` (·) |
+| Bullet dot (edge)  | `text-success shrink-0 mt-0.5` (·) |
+| Bullet dot (gaps)  | `text-warning shrink-0 mt-0.5` (·) |
+| Section header     | `text-xs font-medium text-text-secondary uppercase tracking-wide mb-2` |
+| Sources footer     | `pt-4 border-t border-border` |
+| Source link        | `text-xs text-text-muted hover:text-text-secondary underline-offset-2 hover:underline transition-colors block truncate` |
 
 **Pattern notes:**
-Feature 12: always shows empty state (`company_research` is null for all current jobs). Feature 13 will upgrade this to a Client Component with the `onClick` handler wired to `/api/agent/research`. Empty state icon is `<Building2 size={32} className="text-text-muted" />`. "Research Company" button is `disabled` — not just visually inert — so it provides correct cursor and keyboard behavior. Button will be removed/replaced in Feature 13.
+Feature 13 upgrade: `"use client"` component. Props: `{ jobId: string; company: string | null; initialResearch: CompanyResearchDossier | null }`. State: `research` (init from `initialResearch`), `loading`, `error`. Four UI states: empty (Building2 icon + copy), loading (Loader2 spinner + "Researching…" text, shown when `loading && !research`), error (AlertCircle banner), success (dossier sections). Button shows `<RefreshCw />` + "Re-research" when dossier exists, `<Search />` + "Research Company" when not. Dossier sections: companyOverview (paragraph), techStack (badges), culture (dot bullets, `text-text-muted`), whyThisRole (paragraph), yourEdge (dot bullets, `text-success`), gapsToAddress (dot bullets, `text-warning`), smartQuestions (numbered list), interviewPrep (numbered list), sources + researchedAt (footer with `border-t`). Each section is guarded by a truthy/length check so empty arrays never render. Sources rendered as `<a target="_blank" rel="noopener noreferrer">` only when the string starts with `http://` or `https://`; plain `<li>` text otherwise. API call: `POST /api/agent/research { jobId }` → `{ success, data: { companyResearch } }`. On success, `setResearch()` updates immediately — no `router.refresh()`. Error shows from `body.error` or "Something went wrong." Last updated: 2026-07-02 (project-review fixes — clickable sources).
 
 ---
 

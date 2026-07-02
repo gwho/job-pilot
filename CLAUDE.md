@@ -27,7 +27,7 @@ No test runner is configured. Verify features manually after implementation by r
 | Framework      | Next.js 16 App Router, React 19             |
 | Backend        | InsForge — auth, database, storage, realtime (Supabase-compatible API) |
 | AI             | NVIDIA Nemotron 3 Ultra via OpenRouter (matching, extraction, synthesis, resume generation) |
-| Browser agent  | Browserbase (cloud browser sessions) + Stagehand (AI page control) |
+| Browser agent  | Hyperbrowser (cloud browser sessions) + Stagehand (AI page control via CDP) |
 | Job data       | JobsDB HK via Apify actor (active); Adzuna API (preserved, bypassed in v1) |
 | Analytics      | PostHog (event tracking + dashboard charts) |
 | PDF            | @react-pdf/renderer (resume generation), pdf-parse (resume extraction) |
@@ -57,7 +57,7 @@ InsForge behaves like Supabase (`createBrowserClient` / `createServerClient` fro
 
 **Agent operations** → API route in `app/api/agent/` → function in `agent/` → JobsDB HK Apify actor + Nemotron scoring → InsForge DB write → page revalidated
 
-**Company research** → `app/api/agent/research` → `agent/research.ts` → single Browserbase/Stagehand session (homepage + max 3 sub-pages) → Nemotron synthesis → dossier saved to `jobs.company_research` JSONB
+**Company research** → `app/api/agent/research` → `agent/research.ts` → single Hyperbrowser session + Stagehand via CDP (homepage + max 3 sub-pages) → Nemotron synthesis → dossier saved to `jobs.company_research` JSONB
 
 ### Key invariants
 
@@ -86,7 +86,7 @@ Tailwind v4 — tokens defined with `@theme` in `app/globals.css`. No `tailwind.
 
 ### Environment variables
 
-All in `.env.local`. Required: `NEXT_PUBLIC_INSFORGE_URL`, `NEXT_PUBLIC_INSFORGE_ANON_KEY`, `BROWSERBASE_API_KEY`, `BROWSERBASE_PROJECT_ID`, `OPENROUTER_API_KEY`, `ADZUNA_APP_ID`, `ADZUNA_APP_KEY`, `NEXT_PUBLIC_POSTHOG_KEY`, `NEXT_PUBLIC_POSTHOG_HOST`, `APIFY_TOKEN`, `APIFY_JOBSDB_ACTOR_ID`.
+All in `.env.local`. Required: `NEXT_PUBLIC_INSFORGE_URL`, `NEXT_PUBLIC_INSFORGE_ANON_KEY`, `HYPERBROWSER_API_KEY`, `OPENROUTER_API_KEY`, `ADZUNA_APP_ID`, `ADZUNA_APP_KEY`, `NEXT_PUBLIC_POSTHOG_KEY`, `NEXT_PUBLIC_POSTHOG_HOST`, `APIFY_TOKEN`, `APIFY_JOBSDB_ACTOR_ID`.
 
 `APIFY_TOKEN` — from https://console.apify.com/settings/integrations. `APIFY_JOBSDB_ACTOR_ID` — the deployed actor ID returned by `apify push` (format: `username/actor-name` or the numeric ID).
 
