@@ -557,6 +557,166 @@ Apply href = `externalApplyUrl ?? sourceUrl`. For JobsDB jobs, `externalApplyUrl
 
 ---
 
+### ProfileBanner
+
+File: `components/dashboard/ProfileBanner.tsx`
+Last updated: 2026-07-03 (Feature 14)
+
+| Property         | Class / Value |
+| ---------------- | ------------- |
+| Background       | `bg-surface` |
+| Border           | `border border-border` |
+| Border radius    | `rounded-2xl` |
+| Text — primary   | `text-sm font-medium text-text-primary` (message) |
+| Spacing          | `p-4` (card), `gap-4` (row), `gap-3` (icon + text) |
+| Hover state      | `hover:bg-accent-dark transition-colors` (button) |
+| Shadow           | `shadow-sm` |
+| Accent usage     | `text-warning` (AlertCircle icon), `bg-accent text-accent-foreground` (button) |
+
+**Pattern notes:**
+Renders nothing (`return null`) when `isComplete: true` — the component is always mounted by `page.tsx` but is a no-op for complete profiles. Uses `p-4` (not the standard `p-6`) because this is a compact banner, not a full content card. The `shrink-0` on the Link prevents the button from being squeezed when the message text is long. Alert icon is `size={18}` with `flex-shrink-0` to align to the first text line. This is the only dashboard component that uses `text-warning` — reserved for incomplete-state warnings.
+
+---
+
+### StatsBar + StatCard
+
+File: `components/dashboard/StatsBar.tsx`
+Last updated: 2026-07-03 (Feature 14)
+
+| Property         | Class / Value |
+| ---------------- | ------------- |
+| Grid             | `grid grid-cols-4 gap-6` |
+| Card background  | `bg-surface` |
+| Card border      | `border border-border` |
+| Card radius      | `rounded-2xl` |
+| Card padding     | `p-6` |
+| Card shadow      | `shadow-sm` |
+| Label            | `text-sm font-medium text-text-secondary mb-2` |
+| Stat number      | `text-[30px] font-semibold leading-9 text-text-primary mb-2` |
+| Trend badge      | `bg-success-lightest text-success-darker text-xs font-medium px-2 py-0.5 rounded-sm` |
+| Trend icon       | `TrendingUp size={11}` (inline in badge) |
+| Subtitle (no trend) | `text-xs text-text-muted` |
+| Hover state      | none |
+| Shadow           | `shadow-sm` |
+| Accent usage     | `bg-success-lightest text-success-darker` (trend badge only) |
+
+**Pattern notes:**
+`StatCard` is a module-level unexported sub-component inside `StatsBar.tsx`. It accepts `{ label, value, trend?, subtitle? }` — renders a trend badge when `trend` is present, otherwise renders a plain subtitle. The trend badge uses `rounded-sm` (4px) — not `rounded-full` — per ui-tokens.md Trend Badges spec. Stat number uses a literal pixel size (`text-[30px]`) because 30px has no Tailwind v4 equivalent in the default scale. Only cards 1 (Total Jobs Found) and 2 (Avg. Match Rate) receive `trend`; cards 3 and 4 receive `subtitle`. Feature 15 replaces mock values passed from `page.tsx` without touching this component.
+
+---
+
+### RecentActivity + ActivityRow
+
+File: `components/dashboard/RecentActivity.tsx`
+Last updated: 2026-07-03 (Feature 14)
+
+| Property         | Class / Value |
+| ---------------- | ------------- |
+| Background       | `bg-surface` |
+| Border           | `border border-border` |
+| Border radius    | `rounded-2xl` |
+| Card padding     | `p-6` |
+| Card shadow      | `shadow-sm` |
+| Heading          | `text-base font-semibold text-text-primary mb-2` |
+| Row divider      | `divide-y divide-border` |
+| Row padding      | `py-3` (top + bottom per row) |
+| Activity label   | `text-sm font-medium text-text-primary` |
+| Timestamp        | `text-xs text-text-muted mt-0.5` |
+| Dot — outer (search)   | `w-4 h-4 rounded-full bg-success-light`, with `outline: 1px solid white` inline |
+| Dot — inner (search)   | `w-2 h-2 rounded-full bg-success-alt` |
+| Dot — outer (research) | `w-4 h-4 rounded-full bg-info-light`, with `outline: 1px solid white` inline |
+| Dot — inner (research) | `w-2 h-2 rounded-full bg-info` |
+| Hover state      | none |
+| Shadow           | `shadow-sm` |
+
+**Pattern notes:**
+`ActivityRow` is a module-level unexported sub-component. `ActivityItem` type is exported because `page.tsx` needs it to type the mock array. Two dot types only — `search` (green) and `research` (blue). The white separator ring between outer and inner dot uses an inline `style={{ outline: '1px solid white' }}` on the outer div — there is no Tailwind class for outline color on a rounded div without breaking the ring appearance. `divide-y divide-border` on the item wrapper naturally separates rows without explicit border classes on each `ActivityRow`. Feature 16 replaces the mock `items` array passed from `page.tsx`.
+
+---
+
+### CompanyResearchChart
+
+File: `components/dashboard/CompanyResearchChart.tsx`
+Last updated: 2026-07-03 (Feature 14)
+
+| Property         | Class / Value |
+| ---------------- | ------------- |
+| Background       | `bg-surface` |
+| Border           | `border border-border` |
+| Border radius    | `rounded-2xl` |
+| Card padding     | `p-6` |
+| Card shadow      | `shadow-sm` |
+| Heading          | `text-base font-semibold text-text-primary mb-6` |
+| Chart height     | `height={240}` |
+| Bar fill         | `var(--color-info)` |
+| Bar radius       | `[4, 4, 0, 0]` (top corners only) |
+| Bar size         | `barSize={24}` |
+| Grid             | `strokeDasharray="3 3" stroke="var(--color-border)" vertical={false}` |
+| Axis tick fill   | `var(--color-chart-axis)` fontSize 12 |
+| Axis lines       | `axisLine={false} tickLine={false}` |
+| Hover state      | none (no Tooltip) |
+| Shadow           | `shadow-sm` |
+
+**Pattern notes:**
+`"use client"` component — recharts requires browser context. Always wraps chart in `<ResponsiveContainer width="100%" height={240}>`. Bar radius `[4, 4, 0, 0]` rounds only top corners — standard for all bar charts in this project. `vertical={false}` on CartesianGrid removes vertical grid lines, keeping only horizontal reference lines. No `<Tooltip>` in Feature 14 — may be added in Feature 17. Feature 17 replaces the mock `data` prop from `page.tsx`.
+
+---
+
+### JobsFoundChart
+
+File: `components/dashboard/JobsFoundChart.tsx`
+Last updated: 2026-07-03 (Feature 14)
+
+| Property         | Class / Value |
+| ---------------- | ------------- |
+| Background       | `bg-surface` |
+| Border           | `border border-border` |
+| Border radius    | `rounded-2xl` |
+| Card padding     | `p-6` |
+| Card shadow      | `shadow-sm` |
+| Heading          | `text-base font-semibold text-text-primary mb-6` |
+| Chart height     | `height={240}` |
+| Area stroke      | `var(--color-accent)` strokeWidth 3 |
+| Gradient fill    | `url(#jobsGradient)` — `stopColor="var(--color-accent)"` opacity 0.2 → 0 |
+| Area type        | `type="monotone"` |
+| Area dot         | `dot={false}` |
+| Grid             | `strokeDasharray="3 3" stroke="var(--color-border)" vertical={false}` |
+| Axis tick fill   | `var(--color-chart-axis)` fontSize 12 |
+| Axis lines       | `axisLine={false} tickLine={false}` |
+| Shadow           | `shadow-sm` |
+
+**Pattern notes:**
+Uses `<AreaChart>` not `<LineChart>` — AreaChart provides the gradient fill under the line, which LineChart does not support directly. The gradient is defined in a `<defs><linearGradient id="jobsGradient">` block inside the AreaChart — `id` must be unique per page to avoid SVG gradient collisions (only one area chart per dashboard). `dot={false}` removes individual data point markers for a clean line appearance. Feature 17 replaces the mock `data` prop.
+
+---
+
+### MatchScoreChart
+
+File: `components/dashboard/MatchScoreChart.tsx`
+Last updated: 2026-07-03 (Feature 14)
+
+| Property         | Class / Value |
+| ---------------- | ------------- |
+| Background       | `bg-surface` |
+| Border           | `border border-border` |
+| Border radius    | `rounded-2xl` |
+| Card padding     | `p-6` |
+| Card shadow      | `shadow-sm` |
+| Heading          | `text-base font-semibold text-text-primary mb-6` |
+| Chart height     | `height={240}` |
+| Bar fill         | `var(--color-success)` |
+| Bar radius       | `[4, 4, 0, 0]` |
+| Bar size         | `barSize={36}` (wider than CompanyResearch — only 5 bars vs 7) |
+| Grid             | `strokeDasharray="3 3" stroke="var(--color-border)" vertical={false}` |
+| Axis tick fill   | `var(--color-chart-axis)` fontSize 12 |
+| Axis lines       | `axisLine={false} tickLine={false}` |
+| Shadow           | `shadow-sm` |
+
+**Pattern notes:**
+`dataKey="range"` for XAxis — data shape is `{ range: string; count: number }[]` with fixed range labels ("50-60%", "60-70%", "70-80%", "80-90%", "90-100%"). Wider `barSize={36}` because 5 bars need more visual weight than the 7-bar Company Research chart. Uses `var(--color-success)` (green) to signal high match scores — aligns with the match score color system elsewhere (≥70% = green). Feature 17 replaces the mock `data` prop with real PostHog event data grouped by match score range.
+
+---
+
 ## Patterns
 
 ---

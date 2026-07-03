@@ -757,3 +757,98 @@ export async function POST(req: NextRequest) {
 - `pdfData.text` is raw unformatted text — GPT-4o handles the structure extraction
 - Always handle parse errors — some PDFs are image-based and return empty text
 - If `pdfData.text` is empty or very short — return error to user: "Could not extract text from this PDF. Please try a different file."
+
+---
+
+## Recharts
+
+Used for dashboard charts. Added in Feature 14 (mock data); Feature 17 replaces mock arrays with real PostHog data.
+
+### Component pattern
+
+All chart components are `"use client"`. Always wrap in `<ResponsiveContainer>` so charts resize responsively:
+
+```tsx
+"use client";
+
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid,
+  ResponsiveContainer, Tooltip,
+} from "recharts";
+
+type Props = { data: { day: string; count: number }[] };
+
+export function MyChart({ data }: Props) {
+  return (
+    <div className="bg-surface border border-border rounded-2xl p-6 shadow-sm">
+      <h2 className="text-base font-semibold text-text-primary mb-6">Chart Title</h2>
+      <ResponsiveContainer width="100%" height={240}>
+        <BarChart data={data} barSize={24}>
+          <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
+          <XAxis dataKey="day" tick={{ fill: "var(--color-chart-axis)", fontSize: 12 }} axisLine={false} tickLine={false} />
+          <YAxis tick={{ fill: "var(--color-chart-axis)", fontSize: 12 }} axisLine={false} tickLine={false} />
+          <Bar dataKey="count" fill="var(--color-info)" radius={[4, 4, 0, 0]} />
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+```
+
+### Gradient fill for AreaChart (Jobs Found Over Time)
+
+```tsx
+import { AreaChart, Area, defs } from "recharts"; // defs via recharts SVG primitives
+
+<AreaChart data={data}>
+  <defs>
+    <linearGradient id="jobsGradient" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="5%"  stopColor="var(--color-accent)" stopOpacity={0.2} />
+      <stop offset="95%" stopColor="var(--color-accent)" stopOpacity={0} />
+    </linearGradient>
+  </defs>
+  <Area
+    type="monotone"
+    dataKey="count"
+    stroke="var(--color-accent)"
+    strokeWidth={3}
+    fill="url(#jobsGradient)"
+    dot={false}
+  />
+</AreaChart>
+```
+
+### Colors
+
+Always use CSS variable strings — never hardcoded hex:
+
+| Chart | Color prop | Value |
+|---|---|---|
+| Company Research Activity (bars) | `fill` | `var(--color-info)` |
+| Jobs Found Over Time (line/area) | `stroke` | `var(--color-accent)` |
+| Match Score Distribution (bars) | `fill` | `var(--color-success)` |
+| Axis tick labels | `tick.fill` | `var(--color-chart-axis)` |
+| Grid lines | `stroke` | `var(--color-border)` |
+
+### Data prop shapes
+
+```ts
+// Company Research Activity + Jobs Found Over Time
+type DayCount = { day: string; count: number };
+
+// Match Score Distribution
+type RangeCount = { range: string; count: number };
+```
+
+### Mock-to-real boundary
+
+- Feature 14: mock arrays defined in `app/dashboard/page.tsx`, passed as props to chart components
+- Feature 17: real arrays from PostHog API queries replace the mock arrays in `page.tsx` — chart components unchanged
+
+**Rules:**
+
+- Client Components only — never import recharts in Server Components
+- Always use `<ResponsiveContainer>` — never set fixed pixel width on charts
+- All color strings must use `var(--color-*)` CSS variables — never raw hex
+- `--color-chart-axis` is the only token for axis tick fills — defined in `app/globals.css`
+- Chart data is always passed as props from `page.tsx` — never hardcoded inside chart components

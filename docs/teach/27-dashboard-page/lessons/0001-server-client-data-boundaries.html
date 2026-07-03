@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lesson 1 — When does code run?</title>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<div class="page">
+
+  <div class="progress">
+    <span class="progress-dot active"></span>
+    <span class="progress-dot"></span>
+    <span class="progress-dot"></span>
+    <span class="progress-dot"></span>
+    <span style="margin-left: 0.5rem;">Lesson 1 of 4</span>
+  </div>
+
+  <h1>When does code run?</h1>
+  <p class="subtitle">Server Components, Client Components, and the dashboard split</p>
+
+  <div class="lesson-meta">
+    <span>⏱ ~20 min</span>
+    <span>📘 Tutorial 27, Parts 3 &amp; 7</span>
+    <span>🎯 Feature 14 Dashboard</span>
+  </div>
+
+  <div class="callout mission">
+    <p><strong>Why this lesson matters for your mission:</strong> The server/client split is the first thing to understand about any data-driven web app — it determines where data is fetched, who pays the cost, and what the user can and can't interact with. Once you can name this boundary, you can explain the architecture of almost any modern web dashboard to a client or colleague.</p>
+  </div>
+
+  <h2>The question every React file answers</h2>
+
+  <p>Every file in a Next.js App Router project is either a Server Component or a Client Component. The rule is simple: <strong>by default, every file is a Server Component</strong>. A file only becomes a Client Component when it has <code>"use client"</code> as its very first line.</p>
+
+  <p>In the JobPilot dashboard, six new components were built. Let's look at which ones have <code>"use client"</code> and which don't:</p>
+
+  <table style="border-collapse: collapse; font-family: -apple-system, sans-serif; font-size: 0.9rem; margin: 1.5rem 0; max-width: 68ch;">
+    <thead>
+      <tr style="border-bottom: 2px solid #e5e5e0;">
+        <th style="padding: 0.5rem 1rem 0.5rem 0; text-align: left;">Component</th>
+        <th style="padding: 0.5rem 1rem; text-align: left;">Type</th>
+        <th style="padding: 0.5rem 0; text-align: left;">Why</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr style="border-bottom: 1px solid #e5e5e0;">
+        <td style="padding: 0.5rem 1rem 0.5rem 0;"><code>ProfileBanner</code></td>
+        <td style="padding: 0.5rem 1rem; color: #065f46; font-weight: 600;">Server</td>
+        <td style="padding: 0.5rem 0;">Renders HTML from a boolean — no browser APIs needed</td>
+      </tr>
+      <tr style="border-bottom: 1px solid #e5e5e0;">
+        <td style="padding: 0.5rem 1rem 0.5rem 0;"><code>StatsBar</code></td>
+        <td style="padding: 0.5rem 1rem; color: #065f46; font-weight: 600;">Server</td>
+        <td style="padding: 0.5rem 0;">Renders cards from props — no state, no browser APIs</td>
+      </tr>
+      <tr style="border-bottom: 1px solid #e5e5e0;">
+        <td style="padding: 0.5rem 1rem 0.5rem 0;"><code>RecentActivity</code></td>
+        <td style="padding: 0.5rem 1rem; color: #065f46; font-weight: 600;">Server</td>
+        <td style="padding: 0.5rem 0;">Renders a list from props — no state, no browser APIs</td>
+      </tr>
+      <tr style="border-bottom: 1px solid #e5e5e0;">
+        <td style="padding: 0.5rem 1rem 0.5rem 0;"><code>CompanyResearchChart</code></td>
+        <td style="padding: 0.5rem 1rem; color: #7c3aed; font-weight: 600;">Client</td>
+        <td style="padding: 0.5rem 0;">Uses recharts — requires browser DOM to render SVG</td>
+      </tr>
+      <tr style="border-bottom: 1px solid #e5e5e0;">
+        <td style="padding: 0.5rem 1rem 0.5rem 0;"><code>JobsFoundChart</code></td>
+        <td style="padding: 0.5rem 1rem; color: #7c3aed; font-weight: 600;">Client</td>
+        <td style="padding: 0.5rem 0;">Uses recharts — requires browser DOM to render SVG</td>
+      </tr>
+      <tr>
+        <td style="padding: 0.5rem 1rem 0.5rem 0;"><code>MatchScoreChart</code></td>
+        <td style="padding: 0.5rem 1rem; color: #7c3aed; font-weight: 600;">Client</td>
+        <td style="padding: 0.5rem 0;">Uses recharts — requires browser DOM to render SVG</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p>The pattern is exact: three charts need <code>"use client"</code>. Everything else doesn't.</p>
+
+  <h2>What "Server Component" actually means</h2>
+
+  <p>A Server Component runs <em>only on the server</em>. Its code is never sent to the user's browser. When someone visits <code>/dashboard</code>, Next.js runs the page's Server Components on the server, converts their output to HTML, and sends that HTML to the browser.</p>
+
+  <div class="diagram">Request: GET /dashboard
+        │
+        ▼
+  ┌─────────────────────────────────┐
+  │  SERVER                         │
+  │                                 │
+  │  DashboardPage.tsx              │
+  │  ├─ queries the database        │
+  │  ├─ checks auth session         │
+  │  └─ renders HTML                │
+  │                                 │
+  │  ProfileBanner, StatsBar,       │
+  │  RecentActivity all run here    │
+  └─────────────────────────────────┘
+        │  HTML arrives in browser
+        ▼
+  ┌─────────────────────────────────┐
+  │  BROWSER                        │
+  │                                 │
+  │  CompanyResearchChart           │
+  │  JobsFoundChart                 │
+  │  MatchScoreChart                │
+  │  (these run here — they need    │
+  │   the DOM to draw SVG charts)   │
+  └─────────────────────────────────┘</div>
+
+  <p>Because <code>DashboardPage</code> is a Server Component, it can do something a browser component cannot: <strong>read the database directly</strong>. No API call needed — the page function just awaits the query. That's why the profile banner (which checks whether <code>is_complete</code> is true in the database) can work without a separate network request from the browser.</p>
+
+  <h2>What <code>"use client"</code> actually marks</h2>
+
+  <p>The directive <code>"use client"</code> at the top of a file is not a description — it is a <strong>boundary declaration</strong>. It says: "this file, and everything it imports, should be included in the JavaScript bundle sent to the browser."</p>
+
+  <p>Look at the first three lines of <code>CompanyResearchChart.tsx</code>:</p>
+
+<pre><code>"use client";
+
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  ResponsiveContainer,
+} from "recharts";</code></pre>
+
+  <p>The <code>"use client"</code> marks this file as a client entry point. Recharts and all of its dependencies become part of the JavaScript that downloads to the user's browser. That JavaScript runs in the browser and uses the DOM to draw the SVG chart.</p>
+
+  <p>Without <code>"use client"</code>, Next.js would try to run recharts on the server — where there is no DOM, no <code>window</code>, no <code>ResizeObserver</code>. It would throw an error at build time.</p>
+
+  <div class="callout">
+    <p><strong>The rule in one sentence:</strong> Add <code>"use client"</code> to a file only when that file (or something it imports) needs browser APIs — <code>window</code>, <code>document</code>, <code>ResizeObserver</code>, <code>useState</code>, event handlers. If it just renders HTML from props, leave it as a Server Component.</p>
+  </div>
+
+  <h2>Why this split matters for data</h2>
+
+  <p>The server/client split creates two very different ways of getting data onto the page:</p>
+
+  <p><strong>Server Components get data directly from the source.</strong> <code>DashboardPage</code> awaits an InsForge query in the same function that returns the JSX. No API route, no <code>useEffect</code>, no loading spinner. The HTML arrives pre-populated.</p>
+
+  <p><strong>Client Components must get data through a network boundary.</strong> If a Client Component needs data, it has to fetch it from an API route after the browser loads. That means a loading state, a spinner, and at least one round-trip to the server after page load.</p>
+
+  <p>In the dashboard, this is why the profile banner check — a real database read — lives in the Server Component page, not in <code>ProfileBanner.tsx</code> itself. Moving the query to a Server Component eliminates the loading state entirely. The banner is either there or not when the HTML arrives.</p>
+
+  <div class="callout warn">
+    <p><strong>Common mistake:</strong> Adding <code>"use client"</code> to a file that doesn't need it — for example, because it "looks interactive." This unnecessarily sends code to the browser and prevents the file from using server-only features like direct DB access. When in doubt, don't add it.</p>
+  </div>
+
+  <h2>Quick check — before the quiz</h2>
+
+  <p>Before answering the quiz questions, close your eyes and answer these in your head:</p>
+  <ul style="max-width: 68ch; line-height: 2;">
+    <li>Which three dashboard components are Client Components — and what do they all have in common?</li>
+    <li>Where does <code>DashboardPage</code> get its database data — in the browser or on the server?</li>
+    <li>What does <code>"use client"</code> change about how Next.js handles the file?</li>
+  </ul>
+
+  <div class="quiz">
+    <h3>Quiz — check your understanding</h3>
+
+    <div class="quiz-question">
+      <p>1. Why do <code>CompanyResearchChart</code>, <code>JobsFoundChart</code>, and <code>MatchScoreChart</code> need <code>"use client"</code> — but <code>StatsBar</code> does not?</p>
+      <ul class="quiz-options">
+        <li><button onclick="answer(this, false, 'q1')">StatsBar doesn't display data, so it doesn't need the browser.</button></li>
+        <li><button onclick="answer(this, true, 'q1')">Recharts renders SVG using browser DOM APIs. StatsBar renders plain HTML from props — no DOM APIs needed.</button></li>
+        <li><button onclick="answer(this, false, 'q1')">Client Components are only for components with user interactions like clicks or form input.</button></li>
+        <li><button onclick="answer(this, false, 'q1')">StatsBar is simpler, so it uses fewer resources and doesn't need the browser.</button></li>
+      </ul>
+      <div class="quiz-feedback" id="q1-feedback"></div>
+    </div>
+
+    <div class="quiz-question">
+      <p>2. <code>DashboardPage</code> checks <code>profiles.is_complete</code> in the database and passes the result to <code>ProfileBanner</code>. Why is the database check done in <code>DashboardPage</code> and not inside <code>ProfileBanner</code>?</p>
+      <ul class="quiz-options">
+        <li><button onclick="answer(this, false, 'q2')">ProfileBanner is too small to contain database logic.</button></li>
+        <li><button onclick="answer(this, false, 'q2')">Next.js doesn't allow database calls inside components — only in pages.</button></li>
+        <li><button onclick="answer(this, true, 'q2')">DashboardPage is a Server Component, so it can query the database directly with no network round-trip. ProfileBanner just renders the result. This avoids a loading spinner and an extra API call.</button></li>
+        <li><button onclick="answer(this, false, 'q2')">ProfileBanner is a Client Component, so it can't access the database.</button></li>
+      </ul>
+      <div class="quiz-feedback" id="q2-feedback"></div>
+    </div>
+
+    <div class="quiz-question">
+      <p>3. You add a new component <code>MatchScoreGauge.tsx</code> that displays the user's average match score as a dial. It uses <code>useState</code> to animate the dial on mount. Does it need <code>"use client"</code>?</p>
+      <ul class="quiz-options">
+        <li><button onclick="answer(this, false, 'q3')">No — useState works in Server Components too.</button></li>
+        <li><button onclick="answer(this, true, 'q3')">Yes — useState is a browser hook. Any file that uses it must be a Client Component.</button></li>
+        <li><button onclick="answer(this, false, 'q3')">No — only recharts components need "use client".</button></li>
+        <li><button onclick="answer(this, false, 'q3')">Only if the gauge is inside a grid layout component.</button></li>
+      </ul>
+      <div class="quiz-feedback" id="q3-feedback"></div>
+    </div>
+
+    <div class="quiz-question">
+      <p>4. Feature 15 will replace mock stat numbers with real database counts. The query will run in <code>DashboardPage</code> and the result will be passed to <code>StatsBar</code> as the <code>stats</code> prop. Will <code>StatsBar.tsx</code> need to change?</p>
+      <ul class="quiz-options">
+        <li><button onclick="answer(this, false, 'q4')">Yes — StatsBar needs to fetch the real data itself.</button></li>
+        <li><button onclick="answer(this, false, 'q4')">Yes — the StatCard component inside StatsBar needs to be updated to handle real numbers.</button></li>
+        <li><button onclick="answer(this, true, 'q4')">No — StatsBar just renders whatever it receives in its stats prop. The query goes in DashboardPage. StatsBar doesn't know or care whether the numbers are mock or real.</button></li>
+        <li><button onclick="answer(this, false, 'q4')">Only if the number format changes (e.g., from string to number).</button></li>
+      </ul>
+      <div class="quiz-feedback" id="q4-feedback"></div>
+    </div>
+
+    <div class="quiz-score" id="quiz-score" style="display: none;"></div>
+  </div>
+
+  <h2>Try it in the real codebase</h2>
+
+  <p>Open <code>components/dashboard/StatsBar.tsx</code>. Confirm: no <code>"use client"</code> at the top. Now open <code>components/dashboard/CompanyResearchChart.tsx</code>. Confirm: <code>"use client"</code> is the first line.</p>
+
+  <p>Now open <code>app/dashboard/page.tsx</code>. Find the two lines that query the database:</p>
+
+<pre><code>const { data: profileData } = await insforge.database
+  .from("profiles")
+  .select("is_complete")
+  .eq("id", authData.user.id)
+  .maybeSingle();</code></pre>
+
+  <p>This <code>await</code> runs on the server. The profile data arrives before the browser sees any HTML. There is no loading state, no spinner, and no API route needed for this check. That is the practical benefit of Server Components.</p>
+
+  <div class="callout">
+    <p><strong>One thing to tell a client:</strong> "The dashboard page queries the database on the server before it sends anything to your browser. By the time your browser receives the page, the data is already baked in — that's why there's no loading spinner on the profile banner."</p>
+  </div>
+
+  <h2>Primary resource for this lesson</h2>
+
+  <a class="resource-link" href="https://nextjs.org/docs/app/building-your-application/rendering/server-components" target="_blank" rel="noopener noreferrer">
+    Next.js Docs — Server Components →
+  </a>
+
+  <p style="font-size: 0.9rem; color: #555; font-family: sans-serif;">Read the section "When should I use Server and Client Components?" — it gives exactly the decision rule this lesson teaches, in Next.js's own words.</p>
+
+  <p style="font-size: 0.9rem; color: #555; font-family: sans-serif; margin-top: 1rem;">💬 If anything in this lesson was unclear, ask your agent to explain it further. Try: <em>"I'm learning from Lesson 1 in the dashboard teaching workspace. Can you explain the difference between a Server Component and a Client Component using the DashboardPage as the example?"</em></p>
+
+  <div class="exercises">
+    <h2>Exercises</h2>
+
+    <div class="exercise">
+      <div class="exercise-header">
+        <span class="exercise-num">Exercise 1</span>
+        <span class="exercise-type trace">Trace</span>
+      </div>
+      <p>Open these 6 component files. For each, check whether the first line after the imports says <code>"use client"</code>:</p>
+      <ul style="font-family: -apple-system, sans-serif; font-size: 0.9rem; line-height: 2; margin: 0.5rem 0 0.75rem; padding-left: 1.5rem;">
+        <li><code>components/dashboard/ProfileBanner.tsx</code></li>
+        <li><code>components/dashboard/StatsBar.tsx</code></li>
+        <li><code>components/dashboard/RecentActivity.tsx</code></li>
+        <li><code>components/dashboard/CompanyResearchChart.tsx</code></li>
+        <li><code>components/dashboard/JobsFoundChart.tsx</code></li>
+        <li><code>components/dashboard/MatchScoreChart.tsx</code></li>
+      </ul>
+      <p>In your notes: make two columns — <em>Server Component</em> and <em>Client Component</em>. Place each file in the right column. Then write one sentence explaining <em>why</em> the three client components need the directive.</p>
+      <details class="exercise-hint">
+        <summary>Hint</summary>
+        <div class="hint-body">Three files have <code>"use client"</code> — the three that import recharts. recharts uses <code>ResizeObserver</code> internally for <code>ResponsiveContainer</code>, which is a browser API. Server Components run in Node.js, which has no DOM and no <code>ResizeObserver</code>.</div>
+      </details>
+    </div>
+
+    <div class="exercise">
+      <div class="exercise-header">
+        <span class="exercise-num">Exercise 2</span>
+        <span class="exercise-type break">Break &amp; fix</span>
+      </div>
+      <p>Remove <code>"use client"</code> from <code>components/dashboard/CompanyResearchChart.tsx</code>. With <code>npm run dev</code> running, reload <code>http://localhost:3000/dashboard</code>. Read the error message carefully — it names exactly which browser API recharts tried to use.</p>
+      <p>Write down the error message in your notes, then restore <code>"use client"</code> before continuing.</p>
+      <details class="exercise-hint">
+        <summary>Hint</summary>
+        <div class="hint-body">Look for "You're importing a component that needs…" in the error. Next.js is specific about which API caused the failure. recharts' <code>ResponsiveContainer</code> calls <code>ResizeObserver</code> — a browser object that doesn't exist in Node.js. The error tells you exactly what to fix and why.</div>
+      </details>
+    </div>
+  </div>
+
+  <div class="lesson-nav">
+    <span></span>
+    <a href="0002-mock-data-seam.html">Next: Lesson 2 — The mock data seam →</a>
+  </div>
+
+</div>
+
+<script>
+  const answers = {};
+  const correctAnswers = {
+    q1: 'Recharts renders SVG using browser DOM APIs. StatsBar renders plain HTML from props — no DOM APIs needed.',
+    q2: 'DashboardPage is a Server Component, so it can query the database directly with no network round-trip. ProfileBanner just renders the result. This avoids a loading spinner and an extra API call.',
+    q3: 'Yes — useState is a browser hook. Any file that uses it must be a Client Component.',
+    q4: 'No — StatsBar just renders whatever it receives in its stats prop. The query goes in DashboardPage. StatsBar doesn\'t know or care whether the numbers are mock or real.'
+  };
+  const feedbacks = {
+    q1: {
+      correct: 'Exactly right. Recharts accesses browser APIs like ResizeObserver to make charts responsive. These don\'t exist on the server.',
+      wrong: 'Not quite. The deciding factor is whether the component needs browser APIs — not whether it\'s interactive or displays data.'
+    },
+    q2: {
+      correct: 'Exactly. Server Components are the place for database calls. They run before the HTML is sent to the browser, so there\'s no extra round-trip.',
+      wrong: 'Close — but the real reason is that Server Components can access the database directly. ProfileBanner could technically be a Server Component too. The query lives in DashboardPage because that\'s where auth happens and the user ID is available.'
+    },
+    q3: {
+      correct: 'Correct. useState is a React hook that manages browser state. Hooks require a Client Component environment.',
+      wrong: 'useState only works in the browser — it manages component state across re-renders, which is a browser concept. Any component using useState must be marked "use client".'
+    },
+    q4: {
+      correct: 'Exactly. This is the seam design at work — StatsBar accepts any array of StatCardConfig objects. Feature 15 changes what DashboardPage passes in. StatsBar doesn\'t open.',
+      wrong: 'StatsBar is designed to be data-agnostic — it just renders whatever it receives. The query lives where the auth context is: in the Server Component page.'
+    }
+  };
+  let score = 0;
+  let answered = 0;
+
+  function answer(button, isCorrect, questionId) {
+    if (answers[questionId]) return;
+    answers[questionId] = true;
+    answered++;
+
+    const options = button.closest('.quiz-options').querySelectorAll('button');
+    options.forEach(b => b.disabled = true);
+    button.classList.add(isCorrect ? 'correct' : 'wrong');
+
+    if (isCorrect) {
+      score++;
+      // also highlight the correct button if wrong was clicked (n/a here since we mark the right one)
+    }
+
+    const feedback = document.getElementById(questionId + '-feedback');
+    feedback.textContent = isCorrect ? '✓ ' + feedbacks[questionId].correct : '✗ ' + feedbacks[questionId].wrong;
+    feedback.className = 'quiz-feedback show ' + (isCorrect ? 'correct' : 'wrong');
+
+    if (answered === Object.keys(correctAnswers).length) {
+      const scoreEl = document.getElementById('quiz-score');
+      scoreEl.style.display = 'block';
+      scoreEl.textContent = `Score: ${score}/${answered}. ${score === answered ? '✓ Perfect — move on to Lesson 2.' : 'Review the explanations above, then revisit the code before Lesson 2.'}`;
+    }
+  }
+</script>
+
+</body>
+</html>
