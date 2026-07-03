@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lesson 4 — Nemotron synthesis</title>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<div class="page">
+
+  <div class="progress">
+    <span class="progress-dot done"></span>
+    <span class="progress-dot done"></span>
+    <span class="progress-dot done"></span>
+    <span class="progress-dot active"></span>
+    <span class="progress-dot"></span>
+    <span class="progress-dot"></span>
+    <span style="margin-left: 0.5rem;">Lesson 4 of 6</span>
+  </div>
+
+  <h1>Nemotron synthesis</h1>
+  <p class="subtitle">JSON mode, token budgets, and why you parse the response by hand.</p>
+
+  <div class="lesson-meta">
+    <span>⏱ ~20 min reading + 15 min exercise</span>
+    <span>📘 <a href="../../../tutorials/24-company-research-agent/README.md">Tutorial 24, Part 5</a></span>
+    <span>🗂 <a href="../../../agent/research.ts"><code>agent/research.ts</code> lines 194–285</a></span>
+  </div>
+
+  <div class="callout mission">
+    <p><strong>Why this lesson matters:</strong> Nemotron appears twice in Feature 13. The first time is inside Stagehand — it controls the browser and extracts structured page content. The second time is a direct API call in <code>synthesizeDossier()</code>. This is the reasoning call: it reads everything collected and produces the personalised dossier. These are two different use patterns, with different configuration, different constraints, and different failure modes. This lesson covers the direct call.</p>
+  </div>
+
+  <h2>The concept: JSON mode vs. Zod validation</h2>
+
+  <p>In Lesson 3, Stagehand validated Nemotron's output against a Zod schema. <code>synthesizeDossier()</code> does something different. It sets:</p>
+
+<pre><code>response_format: { type: "json_object" }</code></pre>
+
+  <p>This is <strong>JSON mode</strong> — a parameter supported by OpenRouter-compatible models that tells the model to return syntactically valid JSON rather than prose. It does <em>not</em> guarantee that the JSON matches your expected shape. That distinction matters:</p>
+
+  <div class="diagram">Stagehand extract():
+  Sends JSON Schema → Nemotron must match it exactly
+  Stagehand validates output → ZodError if mismatch
+  You receive a typed TypeScript object
+
+synthesizeDossier() direct call:
+  No schema sent → Nemotron matches the shape in the system prompt
+  json_object mode → output is valid JSON, shape not enforced
+  You receive a string → you call JSON.parse() yourself
+  You cast each field manually with ?? [] defaults</div>
+
+  <p>Why not send a Zod schema to synthesis too? Because the synthesis call has a much richer system prompt — it includes grounding rules, personalisation rules, and output format — and the JSON Schema generated from a Zod schema would compete with those instructions. For structured extraction from a page, schema validation is precise and reliable. For open-ended synthesis, the system prompt is the contract.</p>
+
+  <h2>File-reading task</h2>
+
+  <div class="callout">
+    <p><strong>Task:</strong> Open <a href="../../../agent/research.ts"><code>agent/research.ts</code></a> and read lines 194–285. Before continuing, answer:</p>
+    <ol style="margin: 0.75rem 0; padding-left: 1.5rem; max-width: 60ch;">
+      <li>What is the model name passed to the OpenAI client? How does it differ from the model name used in <code>lib/stagehand.ts</code>?</li>
+      <li>What is <code>companyResearchText</code> set to when <code>content.homepageUrl</code> is an empty string?</li>
+      <li>After <code>JSON.parse(rawContent)</code>, how are the <code>sources</code> built? How many arrays are combined?</li>
+    </ol>
+  </div>
+
+  <p>Here is the full synthesis call:</p>
+
+<pre><code>const response = await openai.chat.completions.create({
+  model: "nvidia/nemotron-3-ultra-550b-a55b:free",
+  response_format: { type: "json_object" },
+  temperature: 0.4,
+  max_tokens: 2000,
+  messages: [
+    { role: "system", content: systemPrompt },
+    { role: "user", content: userPrompt },
+  ],
+});</code></pre>
+
+  <p>And the response handling:</p>
+
+<pre><code>const rawContent = response.choices[0]?.message?.content;
+if (!rawContent) {
+  throw new Error(
+    "Nemotron returned empty content — model may be unavailable or rate-limited"
+  );
+}
+const raw = JSON.parse(rawContent) as Record&lt;string, unknown&gt;;
+
+const allSources = [
+  ...((raw.sources as string[] | undefined) ?? []),
+  ...content.visitedUrls,
+].filter(Boolean);
+
+return {
+  companyOverview: (raw.companyOverview as string) ?? "",
+  techStack: (raw.techStack as string[]) ?? [],
+  culture: (raw.culture as string[]) ?? [],
+  whyThisRole: (raw.whyThisRole as string) ?? "",
+  yourEdge: (raw.yourEdge as string[]) ?? [],
+  gapsToAddress: (raw.gapsToAddress as string[]) ?? [],
+  smartQuestions: (raw.smartQuestions as string[]) ?? [],
+  interviewPrep: (raw.interviewPrep as string[]) ?? [],
+  sources: [...new Set(allSources)],
+  researchedAt: new Date().toISOString(),
+};</code></pre>
+
+  <h2>Why <code>temperature: 0.4</code> and <code>max_tokens: 2000</code></h2>
+
+  <p><strong>Temperature</strong> controls how random the model's output is. At 0, the model always picks the highest-probability next token — fully deterministic, no creativity. At 1, it samples broadly. The synthesis call uses <code>0.4</code>: low enough that factual claims stay grounded (the model does not diverge into confabulation), high enough that it can phrase things naturally and draw non-obvious connections between the candidate's profile and the company's context.</p>
+
+  <p>For comparison, Stagehand uses temperature 0 or very low by default for extraction — page facts should be copied faithfully, not reinterpreted. Synthesis is a reasoning task, so a small amount of sampling helps quality.</p>
+
+  <p><strong>Token budget:</strong> The dossier has 9 string/array fields. The project review calculated:</p>
+
+  <div class="diagram">companyOverview  — ~100 tokens  (one paragraph)
+techStack        — ~50 tokens   (6-8 items)
+culture          — ~80 tokens   (4-5 items)
+whyThisRole      — ~80 tokens   (one paragraph)
+yourEdge         — ~80 tokens   (4-5 items)
+gapsToAddress    — ~80 tokens   (3-4 items)
+smartQuestions   — ~120 tokens  (4-5 questions)
+interviewPrep    — ~120 tokens  (4-5 items)
+sources          — ~60 tokens   (3-5 URLs)
+JSON structure   — ~30 tokens   (keys, braces, quotes)
+                 ─────────────
+Total estimate:  ~800 tokens
+
+max_tokens: 2000 → gives 2.5× headroom</div>
+
+  <p>Setting <code>max_tokens</code> too low truncates the JSON mid-object, producing unparseable output. Setting it too high wastes credits. 2000 is calibrated to cover even verbose dossiers with room to spare.</p>
+
+  <h2>The model name difference</h2>
+
+  <p>In <code>lib/stagehand.ts</code>, the model name is:</p>
+
+<pre><code>modelName: "openai/nvidia/nemotron-3-ultra-550b-a55b:free"</code></pre>
+
+  <p>In <code>synthesizeDossier()</code>, it is:</p>
+
+<pre><code>model: "nvidia/nemotron-3-ultra-550b-a55b:free"</code></pre>
+
+  <p>The difference is the <code>openai/</code> prefix. Stagehand uses OpenRouter but routes through its internal OpenAI-compatible provider wrapper — that prefix tells Stagehand's client which provider adapter to use. The direct OpenAI client in <code>synthesizeDossier()</code> already points at <code>baseURL: "https://openrouter.ai/api/v1"</code>, so OpenRouter handles routing — no prefix needed. Same model, two different call paths.</p>
+
+  <h2>Why <code>?? []</code> and <code>?? ""</code> on every field</h2>
+
+  <p><code>JSON.parse(rawContent)</code> returns <code>Record&lt;string, unknown&gt;</code> — all field types are erased. When you cast <code>raw.techStack as string[]</code>, TypeScript accepts it at compile time, but if Nemotron returned <code>null</code> or omitted the field, the cast would produce <code>null</code> or <code>undefined</code> at runtime. The <code>?? []</code> defaults ensure every field in the returned dossier is always the correct type — never null, never undefined.</p>
+
+  <p>This is important because <code>CompanyResearchDossier</code> has no optional fields — every array is <code>string[]</code>, not <code>string[] | null</code>. The <code>??</code> operators are the bridge between the untyped world of JSON parsing and the typed world of the dossier.</p>
+
+  <h2>The fallback path</h2>
+
+  <p>When browser research fails entirely, <code>content.homepageUrl</code> is <code>""</code> (the initial value set at line 322). Lines 208–211 check this:</p>
+
+<pre><code>const companyResearchText = content.homepageUrl
+  ? `Homepage (${content.homepageUrl}): ${JSON.stringify(content.homepage)}
+${content.subpages.map(...)}`
+  : "No browser research available — synthesize from job posting and candidate profile only.";</code></pre>
+
+  <p>When <code>homepageUrl</code> is empty, the ternary's falsy branch fires. The user prompt still goes to Nemotron — but with that fallback string where the company research would have been. Nemotron synthesises from the job title, job description, matched/missing skills, and the candidate's profile alone. The dossier is less rich, but structurally identical. The UI renders the same component either way.</p>
+
+  <h2>Trace the flow</h2>
+
+  <div class="callout">
+    <p><strong>Task:</strong> Suppose browser research succeeded and returned:</p>
+    <ul style="font-family: 'SF Mono', monospace; font-size: 0.82rem; line-height: 1.8; max-width: 60ch; padding-left: 1.5rem;">
+      <li><code>homepageUrl: "https://stripe.com"</code></li>
+      <li><code>visitedUrls: ["https://stripe.com", "https://stripe.com/blog"]</code></li>
+      <li><code>homepage.oneLiner: "Stripe is a payments platform"</code></li>
+    </ul>
+    <p>Nemotron's synthesis response includes <code>"sources": ["https://stripe.com", "https://stripe.com/about"]</code>.</p>
+    <p>Trace the sources deduplication: what is in <code>allSources</code> before <code>filter(Boolean)</code>, and what is in <code>sources</code> after <code>[...new Set(allSources)]</code>?</p>
+  </div>
+
+  <details>
+    <summary style="font-family: -apple-system, sans-serif; font-size: 0.9rem; cursor: pointer; color: #9b5cf6; margin-bottom: 0.5rem;">Reveal trace</summary>
+    <p><strong>raw.sources:</strong> <code>["https://stripe.com", "https://stripe.com/about"]</code></p>
+    <p><strong>content.visitedUrls:</strong> <code>["https://stripe.com", "https://stripe.com/blog"]</code></p>
+    <p><strong>allSources before filter:</strong></p>
+    <pre style="font-size: 0.82rem; margin: 0.25rem 0;">["https://stripe.com", "https://stripe.com/about",
+ "https://stripe.com", "https://stripe.com/blog"]</pre>
+    <p><strong>After .filter(Boolean):</strong> same — all four are truthy strings, nothing removed.</p>
+    <p><strong>After new Set():</strong> <code>["https://stripe.com", "https://stripe.com/about", "https://stripe.com/blog"]</code> — the duplicate <code>stripe.com</code> is removed. Three unique URLs in the final dossier.</p>
+    <p><strong>Why two sources lists?</strong> Nemotron may cite URLs it inferred from the page content that the agent did not actually visit — links it saw referenced in the text. <code>content.visitedUrls</code> contains only pages the agent actually navigated to. Merging them gives the most complete attribution.</p>
+  </details>
+
+  <h2>Retrieval questions</h2>
+
+  <div class="quiz">
+    <h3>Check your understanding</h3>
+
+    <div class="quiz-question" id="q1">
+      <p>1. <code>response_format: { type: "json_object" }</code> guarantees what, exactly?</p>
+      <ul class="quiz-options">
+        <li><button onclick="answer(this,'q1',false)">The response matches the 9-field dossier shape defined in the system prompt</button></li>
+        <li><button onclick="answer(this,'q1',true)">The response is syntactically valid JSON — it can be parsed with JSON.parse() without throwing</button></li>
+        <li><button onclick="answer(this,'q1',false)">The response is a JSON object with all required fields present and non-null</button></li>
+        <li><button onclick="answer(this,'q1',false)">The model will never hallucinate when this flag is set</button></li>
+      </ul>
+      <div class="quiz-feedback" id="q1-feedback"></div>
+    </div>
+
+    <div class="quiz-question" id="q2">
+      <p>2. The system prompt says: <em>"Never invent funding, customers, headcount, or facts."</em> Is this instruction enforced by the code?</p>
+      <ul class="quiz-options">
+        <li><button onclick="answer(this,'q2',false)">Yes — the code validates the dossier against the research data before returning</button></li>
+        <li><button onclick="answer(this,'q2',false)">Yes — temperature 0.4 prevents the model from generating content not in the input</button></li>
+        <li><button onclick="answer(this,'q2',true)">No — it is a prompt instruction only. Whether the model follows it depends on the model and the content. There is no code that checks whether claimed facts appear in the input research.</button></li>
+        <li><button onclick="answer(this,'q2',false)">Yes — json_object mode disables hallucination for factual fields</button></li>
+      </ul>
+      <div class="quiz-feedback" id="q2-feedback"></div>
+    </div>
+
+    <div class="quiz-question" id="q3">
+      <p>3. What happens at runtime if <code>response.choices[0]?.message?.content</code> is <code>null</code>?</p>
+      <ul class="quiz-options">
+        <li><button onclick="answer(this,'q3',false)"><code>JSON.parse(null)</code> throws a SyntaxError, caught by researchCompany's outer try/catch</button></li>
+        <li><button onclick="answer(this,'q3',true)">The explicit null-check at line 263 throws a descriptive Error — "Nemotron returned empty content..." — which propagates up to researchCompany() where it is caught and logged</button></li>
+        <li><button onclick="answer(this,'q3',false)">The dossier is returned with all fields set to their ?? defaults</button></li>
+        <li><button onclick="answer(this,'q3',false)">synthesizeDossier() returns undefined, and researchCompany() crashes with a type error</button></li>
+      </ul>
+      <div class="quiz-feedback" id="q3-feedback"></div>
+    </div>
+  </div>
+
+  <h2>Predict what happens if…</h2>
+
+  <div class="callout warn">
+    <p><strong>Question:</strong> Suppose <code>max_tokens</code> is changed from <code>2000</code> to <code>200</code>. Nemotron starts generating the dossier and runs out of tokens mid-way through the JSON — the response ends at <code>"techStack": ["TypeScript", "Go",</code> with the array incomplete.</p>
+    <p>Which line throws first? What type of error is it? What does the user see?</p>
+  </div>
+
+  <details>
+    <summary style="font-family: -apple-system, sans-serif; font-size: 0.9rem; cursor: pointer; color: #9b5cf6; margin-bottom: 0.5rem;">Reveal answer</summary>
+    <p><code>rawContent</code> is not null — Nemotron returned <em>something</em>. The null-check at line 263 passes. Line 266 calls <code>JSON.parse(rawContent)</code> on a truncated, invalid JSON string. <code>JSON.parse()</code> throws a <code>SyntaxError: Unexpected end of JSON input</code> (or similar).</p>
+    <p>This is <em>not</em> caught inside <code>synthesizeDossier()</code> — there is no try/catch around the parse call. The error propagates up to <code>researchCompany()</code> at line 352: <code>const dossier = await synthesizeDossier(...)</code>. This is inside no try/catch either. The error propagates up to the API route's catch block, which returns <code>{ success: false, error: "Failed to research company" }</code>. The user sees the error state in the UI — not the truncation details, just the generic error message.</p>
+    <p>This is different from browser research failures, which are always contained. Synthesis failure is uncontained — it propagates all the way to the route. The design decision here is deliberate: a dossier with truncated JSON cannot be partially used, so there is no partial-result path.</p>
+  </details>
+
+  <h2>Practice exercise (10–15 min)</h2>
+
+  <div class="exercises">
+    <h2>Exercise: Trace the request path</h2>
+
+    <p><strong>File:</strong> <a href="../../../agent/research.ts"><code>agent/research.ts</code></a> — <code>synthesizeDossier()</code>, lines 194–285</p>
+
+    <div class="callout" style="margin: 1rem 0;">
+      <p><strong>Goal:</strong> Build a concrete picture of what Nemotron actually receives for a real-world scenario. The synthesis call is not magic — it is a two-message array (system + user) with specific strings assembled from your data. Tracing it reveals which data shapes the output most.</p>
+    </div>
+
+    <p><strong>Invent this scenario</strong> (make up plausible values):</p>
+    <ul style="padding-left: 1.5rem; max-width: 64ch; line-height: 1.9; font-family: -apple-system, sans-serif; font-size: 0.875rem;">
+      <li>Job: <em>Senior Backend Engineer</em> at <em>Stripe</em>, description mentions Golang and distributed systems</li>
+      <li>Candidate: 5 years experience, skills include Python, AWS, PostgreSQL — no Go experience</li>
+      <li>Browser research succeeded: <code>homepageUrl = "https://stripe.com"</code>, one sub-page visited (<code>https://stripe.com/blog</code>), <code>homepage.oneLiner = "Stripe is a payments platform for the internet"</code></li>
+    </ul>
+
+    <p><strong>Task:</strong> Write out (in prose or pseudocode) what goes into each of the following, using the template from the code:</p>
+    <ol style="padding-left: 1.5rem; max-width: 64ch; line-height: 1.9; font-family: -apple-system, sans-serif; font-size: 0.875rem;">
+      <li><strong>The <code>companyResearchText</code> string</strong> — write the first sentence of what it would contain</li>
+      <li><strong>The user prompt's JOB POSTING section</strong> — write what the five lines look like for this job</li>
+      <li><strong>The user prompt's CANDIDATE PROFILE section</strong> — write what skills and work history would look like</li>
+      <li><strong>Which system prompt rule is most relevant</strong> for a candidate with no Go experience applying for a Go role? Quote the exact rule from the code.</li>
+    </ol>
+
+    <p><strong>Manual check:</strong> After tracing, answer: if the candidate profile was <code>null</code> (user never completed their profile), what does the user prompt's CANDIDATE PROFILE section contain? Find the exact code that handles this.</p>
+
+    <p><strong>Extension:</strong> The system prompt says <em>"Be specific to THIS candidate."</em> Based on the scenario you traced, what is the one thing in <code>yourEdge</code> that Nemotron could plausibly surface — something that connects this specific candidate to Stripe's known stack, even without Go experience?</p>
+
+    <p style="font-size: 0.875rem; font-family: -apple-system, sans-serif; color: #555; margin-top: 1.5rem;">
+      📎 Related: <a href="../../../docs/tutorials/24-company-research-agent/README.md">Tutorial 24, Part 5 (synthesis)</a> ·
+      <a href="../../../docs/project-review/13-company-research-agent/findings.md">project-review findings §token budget</a>
+    </p>
+  </div>
+
+  <h2>Primary source</h2>
+
+  <p>Read the <a href="https://platform.openai.com/docs/guides/structured-outputs" target="_blank" rel="noopener noreferrer">OpenAI Structured Outputs guide</a> — specifically the comparison between <code>json_object</code> mode and JSON Schema mode. Understanding what each one guarantees (and doesn't) is the mental model behind why this lesson's synthesis call is structured differently from Lesson 3's extraction call.</p>
+
+  <div class="callout">
+    <p><strong>Ask your AI teacher:</strong> Ask it to explain what a language model's <em>temperature</em> parameter actually controls — in terms of the probability distribution over next tokens. The intuition of "lower = more focused, higher = more creative" is correct, but the mechanism is specific. Understanding it helps you predict when to go lower vs. higher for any future AI integration you build.</p>
+  </div>
+
+  <div class="lesson-nav">
+    <a href="0003-stagehand-extraction.html">← Lesson 3: Stagehand extraction</a>
+    <span style="font-family: -apple-system, sans-serif; color: #555;">Lesson 4 of 6</span>
+    <a href="0005-posthog-isolation.html">Lesson 5: PostHog isolation →</a>
+  </div>
+
+</div>
+
+<script>
+const FEEDBACK = {
+  q1: {
+    correct: "Correct. json_object mode guarantees syntactic validity — JSON.parse() won't throw. It does not enforce field names, field types, or completeness. Nemotron could return { \"status\": \"ok\" } and json_object mode would not object. The actual field contract lives entirely in the system prompt.",
+    wrong: "json_object mode is weaker than it sounds. It only guarantees that the output is parseable JSON — not that it has the right fields, not that the fields have the right types, and not that all fields are present. Compare this to what Zod validation gives you in Lesson 3."
+  },
+  q2: {
+    correct: "Correct. The grounding instruction is a prompt — the model reads it and (usually) follows it, but there is no code that verifies claims. If the research section contained \"Series A funding\" and Nemotron wrote \"raised a $200M Series B,\" no validation would catch it. This is a known limitation of LLM-generated content, which is why the instruction exists as a strong directive — but it is enforced by the model's understanding, not by code.",
+    wrong: "Think about what the code actually does after receiving the dossier. Does it compare any field in the dossier against the research text? Does temperature 0.4 guarantee factual accuracy? Does json_object mode prevent hallucination? None of these enforce factual grounding — only the prompt does, and only heuristically."
+  },
+  q3: {
+    correct: "Correct. The null guard at line 263 throws a descriptive error with a human-readable message about Nemotron being unavailable or rate-limited. This is better than letting JSON.parse(null) throw a SyntaxError, because the error message gives the operator a diagnosis — they know to check model availability, not assume a code bug.",
+    wrong: "Follow the code path carefully. rawContent is checked before JSON.parse() is called. If null: the if block throws. If not null but truncated: JSON.parse() throws a SyntaxError. These are two different failure paths with two different errors. Which one fires when content is null?"
+  }
+};
+
+function answer(btn, qId, isCorrect) {
+  const question = document.getElementById(qId);
+  const buttons = question.querySelectorAll('button');
+  buttons.forEach(b => b.disabled = true);
+  btn.classList.add(isCorrect ? 'correct' : 'wrong');
+
+  const feedback = document.getElementById(qId + '-feedback');
+  feedback.innerHTML = isCorrect ? FEEDBACK[qId].correct : FEEDBACK[qId].wrong;
+  feedback.className = 'quiz-feedback show ' + (isCorrect ? 'correct' : 'wrong');
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lesson 2 — The fallback chain</title>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<div class="page">
+
+  <div class="progress">
+    <span class="progress-dot done"></span>
+    <span class="progress-dot active"></span>
+    <span class="progress-dot"></span>
+    <span class="progress-dot"></span>
+    <span class="progress-dot"></span>
+    <span class="progress-dot"></span>
+    <span style="margin-left: 0.5rem;">Lesson 2 of 6</span>
+  </div>
+
+  <h1>The fallback chain</h1>
+  <p class="subtitle">Three strategies for finding a homepage URL, each ready to fail gracefully into the next.</p>
+
+  <div class="lesson-meta">
+    <span>⏱ ~20 min reading + 15 min exercise</span>
+    <span>📘 <a href="../../../tutorials/24-company-research-agent/README.md">Tutorial 24, Part 3</a></span>
+    <span>🗂 <a href="../../../agent/research.ts"><code>agent/research.ts</code> lines 47–108</a></span>
+  </div>
+
+  <div class="callout mission">
+    <p><strong>Why this lesson matters:</strong> Job listings are messy. Apply URLs point to job boards, not companies. Company names have legal suffixes. The agent must find a usable homepage despite all of that — and it must never crash when data is missing. The fallback chain pattern solves this. You will use this pattern again whenever input data is unreliable.</p>
+  </div>
+
+  <h2>The concept: try the best strategy first, fall through on failure</h2>
+
+  <p>A <strong>fallback chain</strong> is a sequence of strategies tried in priority order. Each step has a success condition. If the condition is met, it returns immediately. If not — or if the step throws — execution falls through to the next step. The last step is always a guaranteed-or-nothing last resort.</p>
+
+  <p>In <code>deriveHomepageUrl()</code>, there are three steps:</p>
+
+  <div class="diagram">Step 1 — Follow redirects
+  Input:  external_apply_url ?? source_url
+  Try:    fetch(url, { redirect: "follow" }) → parse final URL
+  Pass:   hostname is NOT in JOB_BOARD_DOMAINS → return root domain
+  Fail:   fetch throws OR hostname IS a job board → fall through
+
+Step 2 — Parse original URL directly
+  Input:  same url as Step 1
+  Try:    new URL(url) → parse without any network request
+  Pass:   hostname is NOT in JOB_BOARD_DOMAINS → return root domain
+  Fail:   URL is malformed OR hostname IS a job board → fall through
+
+Step 3 — Construct from company name
+  Input:  job.company string
+  Try:    strip legal suffixes → lowercase → remove non-alphanumeric
+  Pass:   cleanName is non-empty → return "https://www.{cleanName}.com"
+  Fail:   job.company is null or produces empty string → return ""</div>
+
+  <h2>File-reading task</h2>
+
+  <div class="callout">
+    <p><strong>Task:</strong> Open <a href="../../../agent/research.ts"><code>agent/research.ts</code></a> and read lines 47–108. Before reading any further in this lesson, find and answer:</p>
+    <ol style="margin: 0.75rem 0; padding-left: 1.5rem; max-width: 60ch;">
+      <li>What two constants are declared before <code>deriveHomepageUrl()</code>? What type are they?</li>
+      <li>What does <code>normalizeToRootDomain()</code> do to the hostname <code>careers.stripe.com</code>?</li>
+      <li>Which step makes a network request? Which steps are purely local computation?</li>
+    </ol>
+  </div>
+
+  <p>Here is the full <code>deriveHomepageUrl()</code> function. Read every line — each <code>try/catch</code> is intentional:</p>
+
+<pre><code>async function deriveHomepageUrl(job: Job): Promise<string> {
+  const raw = job.external_apply_url ?? job.source_url;
+
+  if (raw) {
+    // Step 1: Follow redirects, parse final URL
+    try {
+      const response = await fetch(raw, { redirect: "follow" });
+      const parsed = new URL(response.url);
+      if (!JOB_BOARD_DOMAINS.has(parsed.hostname)) {
+        return normalizeToRootDomain(parsed);
+      }
+    } catch {
+      // fall through
+    }
+
+    // Step 2: Parse original URL without following redirects
+    try {
+      const parsed = new URL(raw);
+      if (!JOB_BOARD_DOMAINS.has(parsed.hostname)) {
+        return normalizeToRootDomain(parsed);
+      }
+    } catch {
+      // fall through
+    }
+  }
+
+  // Step 3: Construct from company name
+  if (job.company) {
+    const cleanName = job.company
+      .replace(/\s*(Inc\.?|LLC|Ltd\.?|Corp\.?|Co\.?|Limited|Group|Holdings?).*$/i, "")
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, "");
+    if (cleanName) {
+      return `https://www.${cleanName}.com`;
+    }
+  }
+
+  return "";
+}</code></pre>
+
+  <div class="callout warn">
+    <p><strong>Notice the empty catch blocks.</strong> They are not an oversight. Each catch block is a deliberate "fall through" — the step failed, so try the next one. Logging is intentionally absent here because URL derivation failure is expected (not an error worth recording). Contrast this with <code>conductBrowserResearch()</code>, where failures ARE logged to <code>agent_logs</code> because browser extraction is a core operation.</p>
+  </div>
+
+  <h2>What <code>normalizeToRootDomain()</code> does</h2>
+
+<pre><code>function normalizeToRootDomain(parsed: URL): string {
+  const parts = parsed.hostname.split(".");
+  if (parts.length > 2 && JOB_SUBDOMAINS.has(parts[0])) {
+    return `${parsed.protocol}//${parts.slice(1).join(".")}`;
+  }
+  return `${parsed.protocol}//${parsed.hostname}`;
+}</code></pre>
+
+  <p>It strips known job-application subdomains. <code>careers.stripe.com</code> has three parts. <code>parts[0]</code> is <code>"careers"</code>, which is in <code>JOB_SUBDOMAINS</code>. So it returns <code>https://stripe.com</code> — the root domain — instead of the careers subdomain. A URL like <code>https://stripe.com/jobs/senior-engineer</code> is returned as-is because <code>parts[0]</code> is <code>"stripe"</code>, not a known job subdomain.</p>
+
+  <h2>Trace the flow</h2>
+
+  <div class="callout">
+    <p><strong>Task:</strong> Trace this job through every step of <code>deriveHomepageUrl()</code>. Write down what each step produces and whether it returns or falls through.</p>
+    <p><code>external_apply_url = "https://apply.jobsdb.com/job/123456?ref=stripe"</code><br>
+    <code>source_url = "https://hk.jobsdb.com/hk/en/job/stripe-hk-software-engineer"</code><br>
+    <code>company = "Stripe Inc."</code></p>
+  </div>
+
+  <details style="margin: 1rem 0;">
+    <summary style="font-family: -apple-system, sans-serif; font-size: 0.9rem; cursor: pointer; color: #9b5cf6; margin-bottom: 0.5rem;">Reveal trace</summary>
+    <p><strong>raw</strong> = <code>"https://apply.jobsdb.com/job/123456?ref=stripe"</code> (external_apply_url wins over source_url)</p>
+    <p><strong>Step 1:</strong> fetch follows redirects. Final URL hostname is either still <code>apply.jobsdb.com</code> or <code>jobsdb.com</code> — both are in <code>JOB_BOARD_DOMAINS</code>. Condition fails. Falls through.</p>
+    <p><strong>Step 2:</strong> <code>new URL(raw)</code> parses to hostname <code>"apply.jobsdb.com"</code>. In <code>JOB_BOARD_DOMAINS</code>? Yes. Falls through.</p>
+    <p><strong>Step 3:</strong> company is <code>"Stripe Inc."</code>. The regex strips <code>" Inc."</code> → <code>"Stripe"</code>. Lowercase → <code>"stripe"</code>. Non-alphanumeric removal → <code>"stripe"</code>. Returns <code>"https://www.stripe.com"</code>. ✓</p>
+  </details>
+
+  <h2>Retrieval questions</h2>
+
+  <div class="quiz">
+    <h3>Check your understanding</h3>
+
+    <div class="quiz-question" id="q1">
+      <p>1. Why does Step 1 use <code>fetch(raw, { redirect: "follow" })</code> rather than parsing <code>raw</code> directly?</p>
+      <ul class="quiz-options">
+        <li><button onclick="answer(this,'q1',false)">To check whether the URL is reachable before visiting it with Stagehand</button></li>
+        <li><button onclick="answer(this,'q1',true)">Job apply URLs often redirect to the real company domain — following redirects reveals the actual destination hostname</button></li>
+        <li><button onclick="answer(this,'q1',false)">To verify the URL returns a 200 status before proceeding</button></li>
+        <li><button onclick="answer(this,'q1',false)">Fetching is required to populate <code>response.url</code> — it is not available from URL parsing alone</button></li>
+      </ul>
+      <div class="quiz-feedback" id="q1-feedback"></div>
+    </div>
+
+    <div class="quiz-question" id="q2">
+      <p>2. Both Step 1 and Step 2 detect a job-board hostname and fall through. What does Step 2 add beyond Step 1?</p>
+      <ul class="quiz-options">
+        <li><button onclick="answer(this,'q2',false)">Step 2 checks a longer denylist of known job boards</button></li>
+        <li><button onclick="answer(this,'q2',false)">Step 2 handles HTTPS-only URLs that Step 1 cannot fetch</button></li>
+        <li><button onclick="answer(this,'q2',true)">Step 2 works when Step 1 throws — network errors, timeouts, or malformed redirect chains all fail Step 1 but leave the original URL intact for Step 2</button></li>
+        <li><button onclick="answer(this,'q2',false)">Step 2 is redundant — it always produces the same result as Step 1</button></li>
+      </ul>
+      <div class="quiz-feedback" id="q2-feedback"></div>
+    </div>
+
+    <div class="quiz-question" id="q3">
+      <p>3. A job has <code>company = "BlackRock Asset Management Holdings Ltd."</code>. What does Step 3 produce?</p>
+      <ul class="quiz-options">
+        <li><button onclick="answer(this,'q3',false)"><code>https://www.blackrockassetmanagementholdings.com</code></button></li>
+        <li><button onclick="answer(this,'q3',true)"><code>https://www.blackrock.com</code></button></li>
+        <li><button onclick="answer(this,'q3',false)"><code>https://www.blackrock-asset-management.com</code></button></li>
+        <li><button onclick="answer(this,'q3',false)"><code>https://www.blackrockasset.com</code></button></li>
+      </ul>
+      <div class="quiz-feedback" id="q3-feedback"></div>
+    </div>
+  </div>
+
+  <h2>Predict what happens if…</h2>
+
+  <div class="callout warn">
+    <p><strong>Question:</strong> Step 3 constructs <code>https://www.stripe.com</code> from the company name. But what if that domain doesn't actually exist — for example, for a small local employer where <code>company = "Pacific Rim Consulting"</code> produces <code>https://www.pacificrimconsulting.com</code> and that site is down or doesn't exist?</p>
+    <p>Does the code check whether the constructed URL is real? What happens when Stagehand navigates to a domain that doesn't exist? Does the user see an error?</p>
+  </div>
+
+  <details>
+    <summary style="font-family: -apple-system, sans-serif; font-size: 0.9rem; cursor: pointer; color: #9b5cf6; margin-bottom: 0.5rem;">Reveal answer</summary>
+    <p><code>deriveHomepageUrl()</code> does no validation on Step 3's output. It constructs the URL and returns it. The check only happens in <code>conductBrowserResearch()</code> when Stagehand calls <code>page.goto(homepageUrl)</code> — if the domain doesn't exist, the browser throws a DNS resolution error. That error is caught by the <code>try/catch</code> around the entire browser research block in <code>conductBrowserResearch()</code>, logged to <code>agent_logs</code>, and execution continues with whatever partial <code>content</code> was collected (in this case, nothing). <code>synthesizeDossier()</code> then runs with the fallback message: <code>"No browser research available — synthesize from job posting and candidate profile only."</code> The user gets a dossier generated purely from the job description and their profile. Not ideal, but not an error state.</p>
+  </details>
+
+  <h2>Practice exercise (10–15 min)</h2>
+
+  <div class="exercises">
+    <h2>Exercise: Build a fallback-chain table</h2>
+
+    <p><strong>File to inspect:</strong> <a href="../../../agent/research.ts"><code>agent/research.ts</code></a> — the full <code>deriveHomepageUrl()</code> function (lines 69–108)</p>
+
+    <div class="callout" style="margin: 1rem 0;">
+      <p><strong>Stop and explain before building.</strong> Before you create the table, write one sentence for each step answering: "What does this step know that the previous step doesn't?" That sentence is your success criterion for understanding the chain — not just its structure.</p>
+    </div>
+
+    <p><strong>Task:</strong> Create a table with four columns for the three steps plus the empty-return case. Fill in each cell from the code — do not guess.</p>
+
+    <table style="border-collapse: collapse; font-family: -apple-system, sans-serif; font-size: 0.85rem; margin: 1rem 0; width: 100%;">
+      <thead>
+        <tr style="border-bottom: 2px solid #e5e5e0;">
+          <th style="padding: 0.4rem 0.75rem 0.4rem 0; text-align: left; width: 15%;">Step</th>
+          <th style="padding: 0.4rem 0.75rem; text-align: left; width: 25%;">Input</th>
+          <th style="padding: 0.4rem 0.75rem; text-align: left; width: 30%;">Success condition</th>
+          <th style="padding: 0.4rem 0; text-align: left; width: 30%;">On failure</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr style="border-bottom: 1px solid #e5e5e0;">
+          <td style="padding: 0.4rem 0.75rem 0.4rem 0; vertical-align: top;">Step 1</td>
+          <td style="padding: 0.4rem 0.75rem; vertical-align: top; color: #aaa;">← fill in</td>
+          <td style="padding: 0.4rem 0.75rem; vertical-align: top; color: #aaa;">← fill in</td>
+          <td style="padding: 0.4rem 0; vertical-align: top; color: #aaa;">← fill in</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #e5e5e0;">
+          <td style="padding: 0.4rem 0.75rem 0.4rem 0; vertical-align: top;">Step 2</td>
+          <td style="padding: 0.4rem 0.75rem; vertical-align: top; color: #aaa;">← fill in</td>
+          <td style="padding: 0.4rem 0.75rem; vertical-align: top; color: #aaa;">← fill in</td>
+          <td style="padding: 0.4rem 0; vertical-align: top; color: #aaa;">← fill in</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #e5e5e0;">
+          <td style="padding: 0.4rem 0.75rem 0.4rem 0; vertical-align: top;">Step 3</td>
+          <td style="padding: 0.4rem 0.75rem; vertical-align: top; color: #aaa;">← fill in</td>
+          <td style="padding: 0.4rem 0.75rem; vertical-align: top; color: #aaa;">← fill in</td>
+          <td style="padding: 0.4rem 0; vertical-align: top; color: #aaa;">← fill in</td>
+        </tr>
+        <tr>
+          <td style="padding: 0.4rem 0.75rem 0.4rem 0; vertical-align: top;">Last resort</td>
+          <td colspan="2" style="padding: 0.4rem 0.75rem; vertical-align: top; color: #aaa;">← what does the function return when all three steps fail?</td>
+          <td style="padding: 0.4rem 0; vertical-align: top; color: #aaa;">N/A</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <p><strong>Manual checks once you have the table:</strong></p>
+    <ul style="max-width: 60ch; padding-left: 1.5rem;">
+      <li>Does Step 1 require a working network? Does Step 2?</li>
+      <li>Which step is most likely to run for a typical Adzuna job listing (where the apply URL goes to Adzuna itself)?</li>
+      <li>What does the caller (<code>researchCompany()</code>) do when <code>deriveHomepageUrl()</code> returns <code>""</code>?</li>
+    </ul>
+
+    <p><strong>Hint:</strong> For the third manual check, find the <code>if (homepageUrl)</code> guard in <code>researchCompany()</code>. An empty string is falsy — the entire browser research block is skipped. <code>synthesizeDossier()</code> still runs.</p>
+
+    <p style="font-size: 0.875rem; font-family: -apple-system, sans-serif; color: #555; margin-top: 1.5rem;">
+      📎 Related: <a href="../../../docs/tutorials/24-company-research-agent/README.md">Tutorial 24, Part 3 (fallback chain)</a> ·
+      <a href="../../../docs/plan/13-company-research-agent/explanation.md">explanation.md §URL derivation</a>
+    </p>
+  </div>
+
+  <h2>Primary source</h2>
+
+  <p>Read MDN's <a href="https://developer.mozilla.org/en-US/docs/Web/API/URL" target="_blank" rel="noopener noreferrer">URL API reference</a> — specifically <code>hostname</code>, <code>protocol</code>, and the constructor's error behaviour. Understanding what <code>new URL()</code> throws on helps you understand why Step 2's catch block is necessary.</p>
+
+  <div class="callout">
+    <p><strong>Ask your AI teacher:</strong> If you are unsure what <code>{ redirect: "follow" }</code> actually means, or why <code>response.url</code> differs from the URL you fetched, ask. The distinction between the request URL and the response URL is the whole point of Step 1.</p>
+  </div>
+
+  <div class="lesson-nav">
+    <a href="0001-three-layer-architecture.html">← Lesson 1: Three tools for one job</a>
+    <span style="font-family: -apple-system, sans-serif; color: #555;">Lesson 2 of 6</span>
+    <a href="0003-stagehand-extraction.html">Lesson 3: Stagehand extraction →</a>
+  </div>
+
+</div>
+
+<script>
+const FEEDBACK = {
+  q1: {
+    correct: "Correct. Many apply URLs are tracking redirects — the URL you click lands on a job board middleware before redirecting to the company's own site. Following redirects reveals the real final hostname.",
+    wrong: "Not quite. The key is what <code>response.url</code> contains after a redirect. Try re-reading Step 1's try block and think about what 'redirect: follow' changes about the response."
+  },
+  q2: {
+    correct: "Correct. Step 1 can fail for any network reason — timeout, CORS error, DNS failure. Step 2 never touches the network; it's pure string parsing. Step 2 is the fallback for when Step 1 can't complete, not when Step 1 succeeds but finds a job board.",
+    wrong: "Not quite. Think about what throws in Step 1 vs. Step 2. One requires a live network request; the other does not. That difference is exactly what Step 2 covers."
+  },
+  q3: {
+    correct: "Correct. The regex strips everything from ' Asset Management Holdings Ltd.' onward (matching 'Holdings'). What remains is 'BlackRock'. Lowercased: 'blackrock'. No special characters removed. Result: https://www.blackrock.com.",
+    wrong: "Look at the regex more carefully: <code>/\\s*(Inc\\.?|LLC|Ltd\\.?|Corp\\.?|Co\\.?|Limited|Group|Holdings?).*$/i</code>. The <code>.*$</code> means everything after the matched word is also stripped — not just the legal suffix itself."
+  }
+};
+
+function answer(btn, qId, isCorrect) {
+  const question = document.getElementById(qId);
+  const buttons = question.querySelectorAll('button');
+  buttons.forEach(b => b.disabled = true);
+  btn.classList.add(isCorrect ? 'correct' : 'wrong');
+
+  const feedback = document.getElementById(qId + '-feedback');
+  feedback.innerHTML = isCorrect ? FEEDBACK[qId].correct : FEEDBACK[qId].wrong;
+  feedback.className = 'quiz-feedback show ' + (isCorrect ? 'correct' : 'wrong');
+}
+</script>
+</body>
+</html>

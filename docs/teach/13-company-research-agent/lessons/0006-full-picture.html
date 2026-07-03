@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lesson 6 — The full picture</title>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<div class="page">
+
+  <div class="progress">
+    <span class="progress-dot done"></span>
+    <span class="progress-dot done"></span>
+    <span class="progress-dot done"></span>
+    <span class="progress-dot done"></span>
+    <span class="progress-dot done"></span>
+    <span class="progress-dot active"></span>
+    <span style="margin-left: 0.5rem;">Lesson 6 of 6</span>
+  </div>
+
+  <h1>The full picture</h1>
+  <p class="subtitle">One button click. Six files. One dossier on screen.</p>
+
+  <div class="lesson-meta">
+    <span>⏱ ~20 min reading + 15 min exercise</span>
+    <span>📘 <a href="../../../tutorials/24-company-research-agent/README.md">Tutorial 24</a></span>
+    <span>🗂 All six Feature 13 files</span>
+  </div>
+
+  <div class="callout mission">
+    <p><strong>Why this lesson matters:</strong> You have now studied each layer of Feature 13 in isolation. This lesson pulls them together into a single end-to-end trace — the complete path from button click to rendered dossier. Being able to walk this path from memory, without the code open, is the final test of whether you understand the feature.</p>
+  </div>
+
+  <h2>The complete path — annotated</h2>
+
+  <p>Starting when the user clicks "Research Company":</p>
+
+  <div class="diagram">BROWSER
+─────────────────────────────────────────────────────────────────
+1. User clicks button → onClick fires → handleResearch() runs
+   File: components/job-details/CompanyResearch.tsx, line 51
+
+2. setLoading(true), setError(null)
+   → button shows spinner + "Researching…"
+   → if no prior research: loading UI replaces empty state
+
+3. fetch("POST /api/agent/research", body: { jobId })
+   → only jobId sent — no company name, no user data from client
+─────────────────────────────────────────────────────────────────
+SERVER — ROUTE
+─────────────────────────────────────────────────────────────────
+4. app/api/agent/research/route.ts receives POST
+   → createInsforgeServer() → getCurrentUser() → 401 if no session
+   → body.jobId validated → 400 if missing or not a string
+
+5. researchCompany(jobId, userId) called
+   → control passes to agent/research.ts
+─────────────────────────────────────────────────────────────────
+SERVER — AGENT
+─────────────────────────────────────────────────────────────────
+6. Job row fetched from DB (scoped to userId)
+   Profile fetched from DB
+
+7. deriveHomepageUrl(job) → string or ""
+   → Three fallback strategies: redirect-follow / parse / name-construct
+
+8. if (homepageUrl):
+   → createHyperbrowserSession() → { client, session }
+   → createStagehand(session.wsEndpoint) → stagehand
+   → conductBrowserResearch(job, stagehand, homepageUrl, userId)
+      → page.goto(homepageUrl) → waitForLoadState("networkidle")
+      → stagehand.extract(..., HomepageSchema) → homepageData
+      → up to 3 sub-pages visited → stagehand.extract(..., SubpageSchema)
+   → finally: stagehand.close() → client.sessions.stop(session.id)
+
+9. synthesizeDossier(content, job, profile)
+   → OpenAI client → Nemotron via OpenRouter
+   → system prompt: grounding rules + personalisation rules
+   → user prompt: research text + job details + profile
+   → json_object response → JSON.parse → field-by-field defaults
+   → sources merged + deduped → CompanyResearchDossier returned
+
+10. dossier saved to jobs.company_research column (DB)
+
+11. return { dossier, company: job.company }
+─────────────────────────────────────────────────────────────────
+SERVER — ROUTE (continued)
+─────────────────────────────────────────────────────────────────
+12. inner try: captureServerEvent("company_researched", { company })
+    → if throws: logged, not rethrown — route unaffected
+
+13. return NextResponse.json({ success: true, data: { companyResearch: dossier } })
+─────────────────────────────────────────────────────────────────
+BROWSER (continued)
+─────────────────────────────────────────────────────────────────
+14. fetch() resolves → body.success is true
+    → setResearch(body.data.companyResearch)
+    → setLoading(false)
+
+15. React re-renders:
+    → {research && ...} block becomes truthy
+    → all dossier sections render
+    → sources section: isUrl check → &lt;a&gt; or &lt;li&gt; text
+    → researchedAt: toLocaleString() → timestamp shown</div>
+
+  <h2>The four UI states</h2>
+
+  <p>Open <a href="../../../components/job-details/CompanyResearch.tsx"><code>CompanyResearch.tsx</code></a>. The component manages three pieces of state:</p>
+
+<pre><code>const [research, setResearch] = useState&lt;CompanyResearchDossier | null&gt;(initialResearch);
+const [loading, setLoading] = useState(false);
+const [error, setError] = useState&lt;string | null&gt;(null);</code></pre>
+
+  <p>These three booleans combine into four visible states:</p>
+
+  <table style="border-collapse: collapse; font-family: -apple-system, sans-serif; font-size: 0.85rem; margin: 1rem 0; width: 100%;">
+    <thead>
+      <tr style="border-bottom: 2px solid #e5e5e0;">
+        <th style="padding: 0.4rem 0.75rem 0.4rem 0; text-align: left;">State</th>
+        <th style="padding: 0.4rem 0.75rem; text-align: left;">research</th>
+        <th style="padding: 0.4rem 0.75rem; text-align: left;">loading</th>
+        <th style="padding: 0.4rem 0; text-align: left;">error</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr style="border-bottom: 1px solid #e5e5e0;">
+        <td style="padding: 0.4rem 0.75rem 0.4rem 0;">Idle / empty</td>
+        <td style="padding: 0.4rem 0.75rem;"><code>null</code></td>
+        <td style="padding: 0.4rem 0.75rem;"><code>false</code></td>
+        <td style="padding: 0.4rem 0;"><code>null</code></td>
+      </tr>
+      <tr style="border-bottom: 1px solid #e5e5e0;">
+        <td style="padding: 0.4rem 0.75rem 0.4rem 0;">Loading (first run)</td>
+        <td style="padding: 0.4rem 0.75rem;"><code>null</code></td>
+        <td style="padding: 0.4rem 0.75rem;"><code>true</code></td>
+        <td style="padding: 0.4rem 0;"><code>null</code></td>
+      </tr>
+      <tr style="border-bottom: 1px solid #e5e5e0;">
+        <td style="padding: 0.4rem 0.75rem 0.4rem 0;">Error</td>
+        <td style="padding: 0.4rem 0.75rem;"><code>null</code></td>
+        <td style="padding: 0.4rem 0.75rem;"><code>false</code></td>
+        <td style="padding: 0.4rem 0;"><code>"..."</code></td>
+      </tr>
+      <tr>
+        <td style="padding: 0.4rem 0.75rem 0.4rem 0;">Success (dossier shown)</td>
+        <td style="padding: 0.4rem 0.75rem;"><code>{ ... }</code></td>
+        <td style="padding: 0.4rem 0.75rem;"><code>false</code></td>
+        <td style="padding: 0.4rem 0;"><code>null</code></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p>Notice there is no "Loading while dossier is shown" state. That is intentional — if the user clicks "Re-research" while a prior dossier is visible, <code>loading</code> becomes true but <code>research</code> still holds the old data. The dossier stays on screen while the new one is being generated. The button changes to "Researching…" but the content does not disappear. This is a better experience than blanking the screen.</p>
+
+  <h2>The sources rendering pattern</h2>
+
+  <p>Read lines 239–254 of <code>CompanyResearch.tsx</code>:</p>
+
+<pre><code>{research.sources.map((src, i) => {
+  const isUrl = src.startsWith("http://") || src.startsWith("https://");
+  return isUrl ? (
+    &lt;li key={i}&gt;
+      &lt;a
+        href={src}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-xs text-text-muted hover:text-text-secondary
+                   underline-offset-2 hover:underline transition-colors
+                   block truncate"
+      &gt;
+        {src}
+      &lt;/a&gt;
+    &lt;/li&gt;
+  ) : (
+    &lt;li key={i} className="text-xs text-text-muted truncate"&gt;{src}&lt;/li&gt;
+  );
+})}</code></pre>
+
+  <p>Two things to notice:</p>
+
+  <p><strong>1. The URL check is explicit:</strong> <code>src.startsWith("http://") || src.startsWith("https://")</code>. Not <code>src.includes(".")</code>. Not a regex. Not <code>URL.canParse()</code>. The check matches exactly what makes something safe to put in an <code>href</code> attribute — a full absolute URL with a known scheme. Nemotron might return something like <code>"Stripe engineering blog"</code> as a source citation. That string must render as plain text, not as a broken link.</p>
+
+  <p><strong>2. Both security attributes together:</strong></p>
+
+  <div class="diagram">rel="noopener"   — prevents the new tab from accessing window.opener
+                       (blocks a class of tab-napping attacks where
+                        an opened page can navigate its opener to
+                        a phishing URL)
+
+rel="noreferrer" — prevents the browser from sending a Referer header
+                   to the destination (privacy; the destination can't
+                   see which page linked to it)
+
+Together: rel="noopener noreferrer"  ← always pair them</div>
+
+  <p>The rule is simple: every <code>target="_blank"</code> link must have both. A <code>target="_blank"</code> without them is a security vulnerability in modern web apps.</p>
+
+  <h2>File-reading task</h2>
+
+  <div class="callout">
+    <p><strong>Task:</strong> Without opening any file, write down from memory the complete list of files involved in Feature 13. For each file, write one sentence on what it owns. Then check your list against the actual files:</p>
+    <ul style="font-family: 'SF Mono', monospace; font-size: 0.82rem; padding-left: 1.5rem; line-height: 1.9;">
+      <li><a href="../../../components/job-details/CompanyResearch.tsx">components/job-details/CompanyResearch.tsx</a></li>
+      <li><a href="../../../app/api/agent/research/route.ts">app/api/agent/research/route.ts</a></li>
+      <li><a href="../../../agent/research.ts">agent/research.ts</a></li>
+      <li><a href="../../../lib/hyperbrowser.ts">lib/hyperbrowser.ts</a></li>
+      <li><a href="../../../lib/stagehand.ts">lib/stagehand.ts</a></li>
+      <li><a href="../../../lib/posthog-server.ts">lib/posthog-server.ts</a></li>
+    </ul>
+    <p>Any file you had to look up is a file you haven't fully internalized yet. That's the gap to close.</p>
+  </div>
+
+  <h2>Trace the flow</h2>
+
+  <div class="callout">
+    <p><strong>Task:</strong> Nemotron synthesis fails — it throws <code>new Error("rate limited")</code>. Starting from step 9 in the path diagram above, trace what happens to the error at each layer. Which functions catch it? Which ones let it propagate? Where does the user first see a change?</p>
+  </div>
+
+  <details>
+    <summary style="font-family: -apple-system, sans-serif; font-size: 0.9rem; cursor: pointer; color: #9b5cf6; margin-bottom: 0.5rem;">Reveal trace</summary>
+    <p><strong>Step 9:</strong> <code>synthesizeDossier()</code> throws. There is no try/catch inside <code>synthesizeDossier()</code> for this — the throw propagates.</p>
+    <p><strong>Step 9 → researchCompany():</strong> <code>const dossier = await synthesizeDossier(...)</code> at line 352 of <code>agent/research.ts</code>. No try/catch here either. The error propagates out of <code>researchCompany()</code>.</p>
+    <p><strong>Step 5 → route.ts:</strong> <code>const { dossier, company } = await researchCompany(jobId, userId)</code> at line 23. No try/catch around this line specifically — but it is inside the outer try. The error propagates to the outer catch at line 36.</p>
+    <p><strong>Outer catch:</strong> <code>console.error("[api/agent/research]", error)</code> logs the rate-limit error server-side. Then returns <code>NextResponse.json({ success: false, error: "Failed to research company" }, { status: 500 })</code>.</p>
+    <p><strong>Browser:</strong> <code>fetch()</code> resolves with status 500. In <code>handleResearch()</code>, the code checks <code>body.success</code> — it is <code>false</code>. The else branch fires: <code>setError(body.error ?? "Something went wrong...")</code>. <code>setLoading(false)</code>.</p>
+    <p><strong>User sees:</strong> The error banner appears at the top of the component. The button re-enables. The dossier panel (if there was a previous research) stays or the empty state shows. The user can retry.</p>
+    <p>Note that the <code>finally</code> block in <code>researchCompany()</code> (lines 341–348) still runs — Stagehand is closed and the Hyperbrowser session is stopped even though synthesis failed.</p>
+  </details>
+
+  <h2>Retrieval questions</h2>
+
+  <div class="quiz">
+    <h3>Check your understanding</h3>
+
+    <div class="quiz-question" id="q1">
+      <p>1. The button changes to "Researching…" during a re-research, but the old dossier stays visible. What state combination produces this?</p>
+      <ul class="quiz-options">
+        <li><button onclick="answer(this,'q1',false)">research = null, loading = true</button></li>
+        <li><button onclick="answer(this,'q1',true)">research = [prior dossier], loading = true</button></li>
+        <li><button onclick="answer(this,'q1',false)">research = null, loading = false</button></li>
+        <li><button onclick="answer(this,'q1',false)">research = [prior dossier], loading = false</button></li>
+      </ul>
+      <div class="quiz-feedback" id="q1-feedback"></div>
+    </div>
+
+    <div class="quiz-question" id="q2">
+      <p>2. A source string comes back as <code>"Engineering Blog — Stripe"</code> (plain text, no URL scheme). What does the component render for this item?</p>
+      <ul class="quiz-options">
+        <li><button onclick="answer(this,'q2',false)">An anchor tag with <code>href="Engineering Blog — Stripe"</code> — the isUrl check is only for display styling</button></li>
+        <li><button onclick="answer(this,'q2',false)">Nothing — strings that aren't URLs are filtered out before rendering</button></li>
+        <li><button onclick="answer(this,'q2',true)">A plain <code>&lt;li&gt;</code> with the text "Engineering Blog — Stripe" — no link, no href, no security attributes needed</button></li>
+        <li><button onclick="answer(this,'q2',false)">An error is thrown because sources must be valid URLs</button></li>
+      </ul>
+      <div class="quiz-feedback" id="q2-feedback"></div>
+    </div>
+
+    <div class="quiz-question" id="q3">
+      <p>3. Why is the dossier also saved to <code>jobs.company_research</code> in the DB (step 10), even though the route immediately returns it to the client (step 13)?</p>
+      <ul class="quiz-options">
+        <li><button onclick="answer(this,'q3',false)">The route needs the DB insert to complete before it can return the dossier</button></li>
+        <li><button onclick="answer(this,'q3',true)">If the user navigates away and returns, the page server-renders with the saved dossier as initialResearch — no re-research needed. The DB write makes the dossier persistent across sessions.</button></li>
+        <li><button onclick="answer(this,'q3',false)">PostHog reads the dossier from the DB — not from the route response</button></li>
+        <li><button onclick="answer(this,'q3',false)">The DB insert is only for audit logging — the client never reads it directly</button></li>
+      </ul>
+      <div class="quiz-feedback" id="q3-feedback"></div>
+    </div>
+  </div>
+
+  <h2>Predict what happens if…</h2>
+
+  <div class="callout warn">
+    <p><strong>Question:</strong> Suppose the DB write at step 10 fails (network blip). The dossier was successfully generated by Nemotron. Does the user see the dossier?</p>
+    <p>Look at the code in <code>researchCompany()</code> around the DB update. Is it inside a try/catch? What happens to the error?</p>
+  </div>
+
+  <details>
+    <summary style="font-family: -apple-system, sans-serif; font-size: 0.9rem; cursor: pointer; color: #9b5cf6; margin-bottom: 0.5rem;">Reveal answer</summary>
+    <p>The DB update at lines 355–359 of <code>agent/research.ts</code> is not inside a try/catch:</p>
+    <pre style="font-size: 0.82rem; margin: 0.25rem 0; background: #1a1a2e; border: 1px solid #2d2d44; border-radius: 6px; padding: 0.75rem; color: #e2e8f0;">await insforge.database
+  .from("jobs")
+  .update({ company_research: dossier })
+  .eq("id", jobId)
+  .eq("user_id", userId);</pre>
+    <p>If this throws, the error propagates to the route's outer catch, which returns a 500. The user sees "Failed to research company." The dossier was generated but never reached the client and was not saved.</p>
+    <p>This is a design trade-off. The DB write is treated as a primary operation, not a side effect — if the dossier can't be persisted, the feature has partially failed. Returning the dossier without saving it would mean the user has it on screen but it disappears on page refresh. Whether that's better or worse than a 500 is a product decision, not a technical one. The current code treats persistence as non-optional.</p>
+  </details>
+
+  <h2>Practice exercise (15 min)</h2>
+
+  <div class="exercises">
+    <h2>Exercise: Add a safe source-link helper</h2>
+
+    <p><strong>File to read:</strong> <a href="../../../components/job-details/CompanyResearch.tsx"><code>components/job-details/CompanyResearch.tsx</code></a>, lines 239–254</p>
+
+    <div class="callout" style="margin: 1rem 0;">
+      <p><strong>Goal:</strong> Extract the source-link rendering logic into a standalone helper function. Right now, the isUrl check and the two JSX branches live inline inside the <code>map()</code>. A helper makes the intent explicit and reusable. You will write the function — not add it to the file yet, just define it in a comment block or scratch document.</p>
+    </div>
+
+    <p><strong>Task:</strong> Write a function <code>renderSourceLink(url: string, index: number): JSX.Element</code> that produces the same output as lines 240–254. Your function must:</p>
+    <ul style="padding-left: 1.5rem; max-width: 64ch; line-height: 1.9; font-family: -apple-system, sans-serif; font-size: 0.875rem;">
+      <li>Accept a source string and its index</li>
+      <li>Check whether it is a valid absolute URL (same check as the existing code — not a regex, not <code>URL.canParse()</code>)</li>
+      <li>Return an <code>&lt;a&gt;</code> element for valid URLs with all three attributes: <code>href</code>, <code>target</code>, <code>rel</code></li>
+      <li>Return a plain <code>&lt;li&gt;</code> for non-URL strings</li>
+      <li>Apply the same Tailwind classes for each case</li>
+    </ul>
+
+    <p><strong>Write it in this shape:</strong></p>
+<pre style="font-size: 0.82rem; margin: 0.5rem 0; background: #1a1a2e; border: 1px solid #2d2d44; border-radius: 6px; padding: 1rem; color: #e2e8f0;">function renderSourceLink(url: string, index: number): JSX.Element {
+  // your code here
+}</pre>
+
+    <p><strong>Check your function against these cases:</strong></p>
+    <ol style="padding-left: 1.5rem; max-width: 64ch; line-height: 1.9; font-family: -apple-system, sans-serif; font-size: 0.875rem;">
+      <li><code>"https://stripe.com"</code> → should produce an <code>&lt;a&gt;</code> with <code>href</code>, <code>target="_blank"</code>, <code>rel="noopener noreferrer"</code></li>
+      <li><code>"http://stripe.com"</code> → also an <code>&lt;a&gt;</code> (http:// is accepted)</li>
+      <li><code>"Stripe engineering blog"</code> → plain <code>&lt;li&gt;</code> text, no href</li>
+      <li><code>"ftp://files.stripe.com"</code> → plain <code>&lt;li&gt;</code> text — why?</li>
+      <li><code>""</code> (empty string) → plain <code>&lt;li&gt;</code> text — and why doesn't it break?</li>
+    </ol>
+
+    <p><strong>Extension — if you want to go further:</strong> The current implementation uses <code>key={i}</code> (the array index as key). React docs discourage this when items can be reordered or removed. What would a better key be for source links? Read the actual <code>sources</code> field definition in <code>types/index.ts</code> and think about what makes each source unique.</p>
+
+    <p style="font-size: 0.875rem; font-family: -apple-system, sans-serif; color: #555; margin-top: 1.5rem;">
+      📎 Related: <a href="../../../docs/project-review/13-company-research-agent/findings.md">project-review findings §conditional URL rendering</a> ·
+      <a href="../../../docs/implement/13-company-research-agent/principles.md">implement principles §conditional URL rendering + security attributes</a>
+    </p>
+  </div>
+
+  <h2>Mission check</h2>
+
+  <div class="callout">
+    <p>Return to <a href="../MISSION.md">MISSION.md</a> and re-read the "What success looks like" section. Try to answer each bullet from memory — no files open:</p>
+    <ol style="margin: 0.75rem 0; padding-left: 1.5rem; max-width: 62ch; line-height: 1.9; font-family: -apple-system, sans-serif; font-size: 0.9rem;">
+      <li>Trace the complete path from "Research Company" button click to dossier render without reading the code.</li>
+      <li>Explain why Hyperbrowser, Stagehand, and Nemotron each do their specific job and not someone else's.</li>
+      <li>Predict what breaks and what survives when any single component fails.</li>
+      <li>Write a new extraction layer or synthesis step that fits naturally into the existing architecture.</li>
+    </ol>
+    <p>If you can answer all four from memory, the lesson series is complete. If one is fuzzy, go back to the lesson that covers it.</p>
+  </div>
+
+  <h2>What comes next</h2>
+
+  <p>Feature 14 is the next item in the build plan. Before building it, run <code>/remember restore</code> to reload the project context, then read <code>context/progress-tracker.md</code> to see what Feature 14 requires and which features it builds on.</p>
+
+  <p>For deeper exploration of any concept from this series:</p>
+  <ul style="max-width: 60ch; padding-left: 1.5rem; font-family: -apple-system, sans-serif; font-size: 0.875rem; line-height: 1.9;">
+    <li><a href="../../../docs/plan/13-company-research-agent/ai-discussion-topics.md">docs/plan/13-company-research-agent/ai-discussion-topics.md</a> — 13 questions for deeper AI conversation</li>
+    <li><a href="../../../docs/tdd/01-research-route-regression/ai-discussion-topics.md">docs/tdd/01-research-route-regression/ai-discussion-topics.md</a> — 15 questions on TDD patterns</li>
+    <li><a href="../../../docs/project-review/13-company-research-agent/ai-discussion-topics.md">docs/project-review/13-company-research-agent/ai-discussion-topics.md</a> — 15 questions on the review findings</li>
+  </ul>
+
+  <div class="lesson-nav">
+    <a href="0005-posthog-isolation.html">← Lesson 5: PostHog isolation</a>
+    <span style="font-family: -apple-system, sans-serif; color: #555; font-weight: 600;">Series complete ✓</span>
+    <a href="../MISSION.md">Mission check →</a>
+  </div>
+
+</div>
+
+<script>
+const FEEDBACK = {
+  q1: {
+    correct: "Correct. When the user re-researches, handleResearch() sets loading to true but does not clear the research state. The {research && ...} block is still truthy, so the dossier stays visible. The {loading && !research} block only shows the loading screen when research is null — the condition !research prevents it from overwriting an existing dossier.",
+    wrong: "Look at the condition for the loading state in the component: {loading && !research}. The !research part is the key — the loading overlay only shows when there is NO prior research. If research exists, the loading state only changes the button, not the dossier panel."
+  },
+  q2: {
+    correct: "Correct. The isUrl check is a gate — if false, the code takes the else branch and renders a plain li element with the string as text content. The string is not interpreted as a URL at all. This prevents browser warnings about invalid hrefs and prevents accidental link creation from non-URL citations.",
+    wrong: "Re-read the conditional rendering: isUrl ? (<a ...>) : (<li ...text...>). The else branch is plain text — no link, no href. Strings that fail the isUrl check are rendered as safe, non-interactive text."
+  },
+  q3: {
+    correct: "Correct. The component accepts initialResearch as a prop, set from job.company_research in the page's server component. If the user navigates back to this job later, the server fetches the job row, finds company_research is populated, passes it as initialResearch, and the dossier renders immediately — no API call, no Hyperbrowser session, no Nemotron. The DB write is what makes this possible.",
+    wrong: "Think about what happens when the user opens this job page a week later. The route returned the dossier to setResearch() — but that React state is gone. Where does the initial dossier come from on a fresh page load? The answer is initialResearch, which comes from the job row, which comes from the DB write at step 10."
+  }
+};
+
+function answer(btn, qId, isCorrect) {
+  const question = document.getElementById(qId);
+  const buttons = question.querySelectorAll('button');
+  buttons.forEach(b => b.disabled = true);
+  btn.classList.add(isCorrect ? 'correct' : 'wrong');
+
+  const feedback = document.getElementById(qId + '-feedback');
+  feedback.innerHTML = isCorrect ? FEEDBACK[qId].correct : FEEDBACK[qId].wrong;
+  feedback.className = 'quiz-feedback show ' + (isCorrect ? 'correct' : 'wrong');
+}
+</script>
+</body>
+</html>

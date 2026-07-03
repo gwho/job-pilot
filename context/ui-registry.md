@@ -581,7 +581,7 @@ Renders nothing (`return null`) when `isComplete: true` — the component is alw
 ### StatsBar + StatCard
 
 File: `components/dashboard/StatsBar.tsx`
-Last updated: 2026-07-03 (Feature 14)
+Last updated: 2026-07-04 (Feature 15 — simplified to subtitle-only, trend removed)
 
 | Property         | Class / Value |
 | ---------------- | ------------- |
@@ -593,15 +593,12 @@ Last updated: 2026-07-03 (Feature 14)
 | Card shadow      | `shadow-sm` |
 | Label            | `text-sm font-medium text-text-secondary mb-2` |
 | Stat number      | `text-[30px] font-semibold leading-9 text-text-primary mb-2` |
-| Trend badge      | `bg-success-lightest text-success-darker text-xs font-medium px-2 py-0.5 rounded-sm` |
-| Trend icon       | `TrendingUp size={11}` (inline in badge) |
-| Subtitle (no trend) | `text-xs text-text-muted` |
+| Subtitle         | `text-xs text-text-muted` |
 | Hover state      | none |
-| Shadow           | `shadow-sm` |
-| Accent usage     | `bg-success-lightest text-success-darker` (trend badge only) |
+| Accent usage     | none |
 
 **Pattern notes:**
-`StatCard` is a module-level unexported sub-component inside `StatsBar.tsx`. It accepts `{ label, value, trend?, subtitle? }` — renders a trend badge when `trend` is present, otherwise renders a plain subtitle. The trend badge uses `rounded-sm` (4px) — not `rounded-full` — per ui-tokens.md Trend Badges spec. Stat number uses a literal pixel size (`text-[30px]`) because 30px has no Tailwind v4 equivalent in the default scale. Only cards 1 (Total Jobs Found) and 2 (Avg. Match Rate) receive `trend`; cards 3 and 4 receive `subtitle`. Feature 15 replaces mock values passed from `page.tsx` without touching this component.
+`StatCard` is a module-level unexported sub-component inside `StatsBar.tsx`. `StatCardConfig` shape is `{ label: string; value: string; subtitle: string }` — `subtitle` is required on every card; no optional `trend` field exists. The trend badge rendering branch was removed in Feature 15 (misleading fake comparative data next to real stat values). Stat number uses a literal pixel size (`text-[30px]`) because 30px has no Tailwind v4 equivalent in the default scale. All four cards now render identically: label → big number → plain muted subtitle. Feature 16 replaces the `RecentActivity` mock items; `StatsBar` is wired to real data as of Feature 15.
 
 ---
 

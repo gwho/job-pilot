@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lesson 5 — PostHog isolation</title>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<div class="page">
+
+  <div class="progress">
+    <span class="progress-dot done"></span>
+    <span class="progress-dot done"></span>
+    <span class="progress-dot done"></span>
+    <span class="progress-dot done"></span>
+    <span class="progress-dot active"></span>
+    <span class="progress-dot"></span>
+    <span style="margin-left: 0.5rem;">Lesson 5 of 6</span>
+  </div>
+
+  <h1>PostHog isolation</h1>
+  <p class="subtitle">Side effects that must never change the user's outcome.</p>
+
+  <div class="lesson-meta">
+    <span>⏱ ~15 min reading + 15 min exercise</span>
+    <span>📘 <a href="../../../docs/project-review/13-company-research-agent/findings.md">project-review findings §analytics isolation</a></span>
+    <span>🗂 <a href="../../../app/api/agent/research/route.ts"><code>app/api/agent/research/route.ts</code></a> · <a href="../../../__tests__/api/agent/research.test.ts"><code>__tests__/api/agent/research/research.test.ts</code></a></span>
+  </div>
+
+  <div class="callout mission">
+    <p><strong>Why this lesson matters:</strong> PostHog is analytics — it records that something happened. It is not the thing that happened. When analytics fails, the user's experience should be unchanged. But if the PostHog call sits inside the main try/catch and throws, it produces a 500 response — the user sees a failure even though the dossier was generated successfully. This lesson is about a class of bug that appears often: side effects that accidentally become load-bearing.</p>
+  </div>
+
+  <h2>The concept: containment boundaries</h2>
+
+  <p>Every API route has one primary obligation — complete its core operation and return the right response. Everything else is a side effect: logging, analytics, notifications, cache invalidation. A <strong>containment boundary</strong> is a try/catch that wraps a side effect so its failure cannot alter the primary outcome.</p>
+
+  <p>Without a containment boundary, this can happen:</p>
+
+  <div class="diagram">User clicks "Research Company"
+         ↓
+Route: researchCompany() succeeds — dossier generated ✓
+         ↓
+Route: captureServerEvent() throws — PostHog is down
+         ↓
+Outer catch block fires
+         ↓
+NextResponse.json({ success: false }, { status: 500 })
+         ↓
+User sees: "Failed to research company"
+Actual state: dossier was saved to DB — it exists</div>
+
+  <p>With a containment boundary:</p>
+
+  <div class="diagram">User clicks "Research Company"
+         ↓
+Route: researchCompany() succeeds — dossier generated ✓
+         ↓
+Route: inner try: captureServerEvent() throws — PostHog is down
+         ↓
+Inner catch fires: console.error (logged, not rethrown)
+         ↓
+NextResponse.json({ success: true, data: { companyResearch: dossier } })
+         ↓
+User sees: dossier rendered correctly</div>
+
+  <h2>File-reading task</h2>
+
+  <div class="callout">
+    <p><strong>Task:</strong> Open <a href="../../../app/api/agent/research/route.ts"><code>app/api/agent/research/route.ts</code></a>. Before continuing, answer:</p>
+    <ol style="margin: 0.75rem 0; padding-left: 1.5rem; max-width: 60ch;">
+      <li>How many try/catch blocks are in this file? Draw the nesting structure.</li>
+      <li>Which try block contains the PostHog call?</li>
+      <li>What does the inner catch do with the error? Does it rethrow?</li>
+    </ol>
+  </div>
+
+  <p>Here is the full route — every line:</p>
+
+<pre><code>export async function POST(req: NextRequest): Promise&lt;NextResponse&gt; {
+  try {                                                     // ← outer try
+    const insforge = await createInsforgeServer();
+    const { data: authData, error: authError } =
+      await insforge.auth.getCurrentUser();
+    if (authError || !authData.user) {
+      return NextResponse.json(
+        { success: false, error: "Unauthorized" }, { status: 401 }
+      );
+    }
+
+    const body = await req.json() as { jobId?: unknown };
+    if (!body.jobId || typeof body.jobId !== "string") {
+      return NextResponse.json(
+        { success: false, error: "jobId is required" }, { status: 400 }
+      );
+    }
+
+    const { jobId } = body;
+    const userId = authData.user.id;
+
+    const { dossier, company } = await researchCompany(jobId, userId);
+
+    try {                                                   // ← inner try
+      await captureServerEvent({
+        distinctId: userId,
+        event: "company_researched",
+        properties: { userId, jobId, company: company ?? "" },
+      });
+    } catch {                                              // ← inner catch
+      console.error(
+        "[api/agent/research] PostHog capture failed — analytics only, research succeeded"
+      );
+    }
+
+    return NextResponse.json(
+      { success: true, data: { companyResearch: dossier } }
+    );
+  } catch (error) {                                        // ← outer catch
+    console.error("[api/agent/research]", error);
+    return NextResponse.json(
+      { success: false, error: "Failed to research company" },
+      { status: 500 },
+    );
+  }
+}</code></pre>
+
+  <div class="callout warn">
+    <p><strong>The key structural detail:</strong> The inner try/catch ends <em>before</em> the <code>return NextResponse.json({ success: true, ... })</code>. The return is outside the inner try, still inside the outer try. This means: PostHog either succeeds (event captured) or fails (error swallowed) — but either way, execution always reaches the success return. The outer catch is never involved in the PostHog path.</p>
+  </div>
+
+  <h2>Why <code>company</code> comes from <code>researchCompany()</code>, not the request body</h2>
+
+  <p>The PostHog event includes <code>company: company ?? ""</code>. Notice <code>company</code> comes from the destructured return value of <code>researchCompany()</code> — not from the request body.</p>
+
+  <p>Before the project review, this property was missing entirely. The fix could have been: read <code>company</code> from the client (<code>body.company</code>). But that would let the client send any string it wanted — a security and data integrity issue. Instead, <code>researchCompany()</code> was extended to return <code>{ dossier, company }</code>, deriving the company name from the server-side job row. The PostHog event always contains the real company name from the database.</p>
+
+  <h2>What the existing regression test does</h2>
+
+  <p>This bug was caught by a project review, fixed, and then covered by a regression test. Open <a href="../../../__tests__/api/agent/research.test.ts"><code>__tests__/api/agent/research.test.ts</code></a>. The test at line 77 is the regression test for this exact isolation:</p>
+
+<pre><code>it("returns success:true with dossier even when captureServerEvent throws", async () => {
+  vi.mocked(captureServerEvent).mockRejectedValue(
+    new Error("PostHog unavailable")
+  );
+
+  const res = await POST(makeRequest({ jobId: "job-1" }));
+  const body = await res.json() as { ... };
+
+  expect(res.status).toBe(200);
+  expect(body.success).toBe(true);
+  expect(body.data?.companyResearch).toEqual(MOCK_DOSSIER);
+});</code></pre>
+
+  <p>Read this alongside the route code. For each line of the test, identify:</p>
+  <ul style="max-width: 64ch; padding-left: 1.5rem; font-family: -apple-system, sans-serif; font-size: 0.9rem; line-height: 1.8;">
+    <li><code>mockRejectedValue</code> — makes PostHog throw when called. This simulates PostHog being down.</li>
+    <li><code>expect(res.status).toBe(200)</code> — verifies the route's HTTP status is 200, not 500. This is the isolation guarantee.</li>
+    <li><code>expect(body.success).toBe(true)</code> — verifies the response body says success, not error.</li>
+    <li><code>expect(body.data?.companyResearch).toEqual(MOCK_DOSSIER)</code> — verifies the actual dossier data is in the response.</li>
+  </ul>
+
+  <p>The test does not assert anything about the <code>console.error</code> call. It only cares about the user-facing outcome. This is correct: the test verifies a user-facing contract, not an internal implementation detail.</p>
+
+  <h2>Trace the flow</h2>
+
+  <div class="callout">
+    <p><strong>Task:</strong> Trace the execution path when <code>captureServerEvent</code> throws, starting at line 8 of the route. Which lines execute? Which are skipped? Where does execution end up?</p>
+  </div>
+
+  <details>
+    <summary style="font-family: -apple-system, sans-serif; font-size: 0.9rem; cursor: pointer; color: #9b5cf6; margin-bottom: 0.5rem;">Reveal trace</summary>
+    <p><strong>Lines 8–12:</strong> Outer try entered. InsForge auth check passes (mocked to return user).</p>
+    <p><strong>Lines 15–18:</strong> Body parsed. <code>jobId: "job-1"</code> present and is a string. Validation passes.</p>
+    <p><strong>Lines 20–21:</strong> jobId and userId extracted.</p>
+    <p><strong>Line 23:</strong> <code>researchCompany("job-1", "user-1")</code> called. Returns <code>{ dossier: MOCK_DOSSIER, company: "Stripe" }</code>.</p>
+    <p><strong>Line 25:</strong> Inner try entered.</p>
+    <p><strong>Lines 26–30:</strong> <code>captureServerEvent(...)</code> called. It throws <code>new Error("PostHog unavailable")</code>.</p>
+    <p><strong>Line 31:</strong> Inner catch fires. <code>console.error(...).</code> Error not rethrown.</p>
+    <p><strong>Inner try/catch ends.</strong> Execution continues at line 35.</p>
+    <p><strong>Line 35:</strong> <code>return NextResponse.json({ success: true, data: { companyResearch: dossier } })</code>. Route returns 200 with the dossier.</p>
+    <p><strong>Lines 36–41:</strong> Outer catch is <em>never reached</em>. The inner catch consumed the error.</p>
+  </details>
+
+  <h2>Retrieval questions</h2>
+
+  <div class="quiz">
+    <h3>Check your understanding</h3>
+
+    <div class="quiz-question" id="q1">
+      <p>1. Why is it wrong to read <code>company</code> from <code>body.company</code> (the request body) instead of from <code>researchCompany()</code>'s return value?</p>
+      <ul class="quiz-options">
+        <li><button onclick="answer(this,'q1',false)">The request body might not be parsed yet when PostHog fires</button></li>
+        <li><button onclick="answer(this,'q1',false)">PostHog rejects the event if the company name has special characters</button></li>
+        <li><button onclick="answer(this,'q1',true)">A client-supplied company name could be spoofed — an attacker or buggy client could send any string. The server-side job row is the authoritative source.</button></li>
+        <li><button onclick="answer(this,'q1',false)">TypeScript can't type-check string values from JSON bodies at compile time</button></li>
+      </ul>
+      <div class="quiz-feedback" id="q1-feedback"></div>
+    </div>
+
+    <div class="quiz-question" id="q2">
+      <p>2. Suppose <code>researchCompany()</code> throws (not PostHog — the research itself fails). Which catch block fires?</p>
+      <ul class="quiz-options">
+        <li><button onclick="answer(this,'q2',false)">The inner catch at line 31 — it catches all errors inside the outer try</button></li>
+        <li><button onclick="answer(this,'q2',true)">The outer catch at line 36 — researchCompany() is not inside the inner try</button></li>
+        <li><button onclick="answer(this,'q2',false)">Both catch blocks fire in order — inner first, then outer</button></li>
+        <li><button onclick="answer(this,'q2',false)">Neither — researchCompany() errors are caught inside agent/research.ts</button></li>
+      </ul>
+      <div class="quiz-feedback" id="q2-feedback"></div>
+    </div>
+
+    <div class="quiz-question" id="q3">
+      <p>3. The regression test uses <code>expect.objectContaining()</code> in the company-derivation tests but <code>toEqual(MOCK_DOSSIER)</code> for the dossier. Why the difference?</p>
+      <ul class="quiz-options">
+        <li><button onclick="answer(this,'q3',false)">toEqual() is for objects; objectContaining() is for primitives like strings</button></li>
+        <li><button onclick="answer(this,'q3',true)">The dossier test needs to verify the exact value returned — so a full equality check is correct. The PostHog event test only cares about specific properties (company, event name) and doesn't need to assert every property the call receives.</button></li>
+        <li><button onclick="answer(this,'q3',false)">objectContaining() is used when the value might be undefined</button></li>
+        <li><button onclick="answer(this,'q3',false)">toEqual() cannot compare objects with nested arrays</button></li>
+      </ul>
+      <div class="quiz-feedback" id="q3-feedback"></div>
+    </div>
+  </div>
+
+  <h2>Predict what happens if…</h2>
+
+  <div class="callout warn">
+    <p><strong>Question:</strong> Suppose you move the <code>return NextResponse.json({ success: true, ... })</code> inside the inner try block — after the PostHog call, before the inner catch. Like this:</p>
+    <pre style="font-size: 0.82rem; margin: 0.5rem 0; background: #1a1a2e; border: 1px solid #2d2d44; border-radius: 6px; padding: 1rem;">try {
+  await captureServerEvent({ ... });
+  return NextResponse.json({ success: true, ... }); // ← moved here
+} catch {
+  console.error("PostHog failed");
+}</pre>
+    <p>What happens when PostHog throws? Does the user still get the dossier?</p>
+  </div>
+
+  <details>
+    <summary style="font-family: -apple-system, sans-serif; font-size: 0.9rem; cursor: pointer; color: #9b5cf6; margin-bottom: 0.5rem;">Reveal answer</summary>
+    <p>When PostHog throws, the inner catch fires — the <code>return</code> inside the inner try is never reached. The inner catch logs the error but does not return. Execution falls through to the end of the outer try block — but there is now no <code>return</code> there either (it was moved inside the inner try).</p>
+    <p>A function that returns <code>Promise&lt;NextResponse&gt;</code> with no explicit return at the end returns <code>undefined</code>. Next.js would likely throw an error about an invalid response, or the route would return an empty response. The user would get an error.</p>
+    <p>This is a subtle placement bug. The success return must be <em>outside and after</em> the PostHog inner try/catch, not inside it. The inner try/catch must be a pure side-effect block with no return statement. That placement is what makes the isolation work.</p>
+  </details>
+
+  <h2>Practice exercise (10–15 min)</h2>
+
+  <div class="exercises">
+    <h2>Exercise: Write a regression test idea</h2>
+
+    <p><strong>Files:</strong> <a href="../../../app/api/agent/research/route.ts"><code>app/api/agent/research/route.ts</code></a> and <a href="../../../__tests__/api/agent/research.test.ts"><code>__tests__/api/agent/research.test.ts</code></a></p>
+
+    <div class="callout" style="margin: 1rem 0;">
+      <p><strong>There is already a passing regression test for this bug</strong> in <code>__tests__/api/agent/research.test.ts</code> at line 77. The exercise is to understand it deeply enough that you could write a version of it yourself.</p>
+    </div>
+
+    <p><strong>Part 1 — Understand the existing test (read only):</strong></p>
+    <p>Read the test at line 77 and answer each question in writing before reading on:</p>
+    <ol style="padding-left: 1.5rem; max-width: 64ch; line-height: 1.9; font-family: -apple-system, sans-serif; font-size: 0.875rem;">
+      <li>The test mocks three dependencies. What is each mock simulating? Write one sentence per mock.</li>
+      <li>Which mock is overridden specifically in this test (not just in <code>beforeEach</code>)? Why?</li>
+      <li>The test makes three assertions (<code>expect</code> calls). What behaviour does each one verify?</li>
+      <li>The test does NOT assert that <code>console.error</code> was called. Why is that omission correct?</li>
+    </ol>
+
+    <p><strong>Part 2 — Write the test from scratch (without looking at the file):</strong></p>
+    <p>Close the test file. In pseudocode or real Vitest syntax, write a test for the same behaviour — "PostHog failure must not affect the 200 response." You should be able to write it from the route code alone. Your test should have:</p>
+    <ul style="padding-left: 1.5rem; max-width: 64ch; line-height: 1.9; font-family: -apple-system, sans-serif; font-size: 0.875rem;">
+      <li>One setup line making PostHog throw</li>
+      <li>One call to the POST handler</li>
+      <li>Assertions on status and body</li>
+    </ul>
+
+    <p><strong>Part 3 — Compare and find the gap:</strong></p>
+    <p>Open the test file again. Compare your version to the real test at line 77. If yours is missing anything, write down why the real test includes it. The most common gap is the third assertion — <code>expect(body.data?.companyResearch).toEqual(MOCK_DOSSIER)</code>. Why does the test need to verify the dossier, not just the status code?</p>
+
+    <p><strong>Manual check:</strong> Run the test suite to confirm all tests still pass:</p>
+    <pre style="font-size: 0.82rem; margin: 0.25rem 0; background: #1a1a2e; border: 1px solid #2d2d44; border-radius: 6px; padding: 0.75rem; color: #e2e8f0;">npm run test:run</pre>
+    <p>All 45 tests should pass. If any fail, check whether you accidentally edited the test file during Part 2.</p>
+
+    <p style="font-size: 0.875rem; font-family: -apple-system, sans-serif; color: #555; margin-top: 1.5rem;">
+      📎 Related: <a href="../../../docs/tdd/01-research-route-regression/principles.md">TDD session principles §PostHog isolation test</a> ·
+      <a href="../../../docs/project-review/13-company-research-agent/findings.md">project-review findings §analytics isolation</a> ·
+      <a href="../../../docs/tutorials/26-research-route-regression-tdd/README.md">Tutorial 26 (full TDD session)</a>
+    </p>
+  </div>
+
+  <h2>Primary source</h2>
+
+  <p>This pattern has a name in software design: <strong>failure isolation</strong> or <strong>bulkhead pattern</strong> (from naval engineering — a bulkhead contains a flood in one compartment so the ship stays afloat). Search for "bulkhead pattern microservices" and read one short explanation. The same principle applies at every scale: a side effect that can fail should be isolated so its failure cannot sink the primary operation.</p>
+
+  <div class="callout">
+    <p><strong>Ask your AI teacher:</strong> Ask it to explain the difference between a side effect and a primary effect in the context of an API route. Then ask: "What other side effects in a typical web API should have containment boundaries?" The list is longer than you might think: email notifications, webhooks, audit logs, cache invalidation, third-party integrations.</p>
+  </div>
+
+  <div class="lesson-nav">
+    <a href="0004-nemotron-synthesis.html">← Lesson 4: Nemotron synthesis</a>
+    <span style="font-family: -apple-system, sans-serif; color: #555;">Lesson 5 of 6</span>
+    <a href="0006-full-picture.html">Lesson 6: The full picture →</a>
+  </div>
+
+</div>
+
+<script>
+const FEEDBACK = {
+  q1: {
+    correct: "Correct. Analytics events are a form of data your team depends on for product decisions. If clients can send arbitrary company names, your PostHog dashboard becomes unreliable — you might see companies that don't exist, or the same company under different spellings. Deriving it server-side from the job row means the event always reflects real data.",
+    wrong: "The issue is data integrity and trust boundary. Where does the company name come from? If it comes from the client, the client controls what PostHog records. If it comes from the server-side job row, the server controls it. Think about what happens if a client sends { jobId: 'job-1', company: 'Fake Corp' }."
+  },
+  q2: {
+    correct: "Correct. researchCompany() is called at line 23, which is inside the outer try but outside the inner try. The inner try only starts at line 25, after researchCompany() has already returned. So a researchCompany() throw bubbles past the inner try (not yet open) and is caught by the outer catch at line 36, returning a 500.",
+    wrong: "Re-read the nesting carefully. The inner try starts at line 25 — after researchCompany() is called at line 23. An exception thrown at line 23 propagates through the outer try (which opened at line 8) and reaches the outer catch at line 36. The inner try/catch has not been entered yet."
+  },
+  q3: {
+    correct: "Correct. expect.objectContaining() is a partial matcher — it only checks the listed properties and ignores any others the object might have. This is the right choice when you care about specific properties (company, event name) but don't want the test to break if captureServerEvent adds a new property in the future. toEqual(MOCK_DOSSIER) is an exact match — it verifies the dossier wasn't modified or truncated in transit.",
+    wrong: "Think about what each matcher asserts. toEqual checks every property of the object must be exactly equal. objectContaining checks that at least the listed properties are present and equal — other properties are allowed. Which is appropriate when you're checking a PostHog event that might have properties you haven't enumerated vs. a dossier that must be exactly the mock value?"
+  }
+};
+
+function answer(btn, qId, isCorrect) {
+  const question = document.getElementById(qId);
+  const buttons = question.querySelectorAll('button');
+  buttons.forEach(b => b.disabled = true);
+  btn.classList.add(isCorrect ? 'correct' : 'wrong');
+
+  const feedback = document.getElementById(qId + '-feedback');
+  feedback.innerHTML = isCorrect ? FEEDBACK[qId].correct : FEEDBACK[qId].wrong;
+  feedback.className = 'quiz-feedback show ' + (isCorrect ? 'correct' : 'wrong');
+}
+</script>
+</body>
+</html>
