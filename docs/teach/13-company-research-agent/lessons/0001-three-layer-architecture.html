@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lesson 1 — Why three tools for one job</title>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<div class="page">
+
+  <div class="progress">
+    <span class="progress-dot active"></span>
+    <span class="progress-dot"></span>
+    <span class="progress-dot"></span>
+    <span class="progress-dot"></span>
+    <span class="progress-dot"></span>
+    <span class="progress-dot"></span>
+    <span style="margin-left: 0.5rem;">Lesson 1 of 6</span>
+  </div>
+
+  <h1>Why three tools for one job</h1>
+  <p class="subtitle">Hyperbrowser owns the session. Stagehand owns the browser. Nemotron owns the reasoning.</p>
+
+  <div class="lesson-meta">
+    <span>⏱ ~20 min reading + 15 min exercise</span>
+    <span>📘 <a href="../../../tutorials/24-company-research-agent/README.md">Tutorial 24, Parts 1–3</a></span>
+    <span>🗂 <a href="../../../docs/plan/13-company-research-agent/explanation.md">explanation.md §1–3</a></span>
+  </div>
+
+  <div class="callout mission">
+    <p><strong>Why this lesson matters:</strong> Feature 13 uses three separate tools where one tool could theoretically do everything. Understanding <em>why</em> they are split lets you predict what breaks when any one of them fails — and that is the single most important skill for debugging agent code.</p>
+  </div>
+
+  <h2>The concept: one responsibility per layer</h2>
+
+  <p>The company research agent needs to browse the web. That sounds like one job. It is actually three very different jobs:</p>
+
+  <table style="border-collapse: collapse; font-family: -apple-system, sans-serif; font-size: 0.9rem; margin: 1.5rem 0; max-width: 68ch;">
+    <thead>
+      <tr style="border-bottom: 2px solid #e5e5e0;">
+        <th style="padding: 0.5rem 1rem 0.5rem 0; text-align: left;">Tool</th>
+        <th style="padding: 0.5rem 1rem; text-align: left;">Job</th>
+        <th style="padding: 0.5rem 0; text-align: left;">File</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr style="border-bottom: 1px solid #e5e5e0;">
+        <td style="padding: 0.5rem 1rem 0.5rem 0;"><strong>Hyperbrowser</strong></td>
+        <td style="padding: 0.5rem 1rem;">Create and manage a remote Chrome browser session in the cloud</td>
+        <td style="padding: 0.5rem 0;"><code>lib/hyperbrowser.ts</code></td>
+      </tr>
+      <tr style="border-bottom: 1px solid #e5e5e0;">
+        <td style="padding: 0.5rem 1rem 0.5rem 0;"><strong>Stagehand</strong></td>
+        <td style="padding: 0.5rem 1rem;">Connect to any browser via CDP and extract structured data using AI</td>
+        <td style="padding: 0.5rem 0;"><code>lib/stagehand.ts</code></td>
+      </tr>
+      <tr>
+        <td style="padding: 0.5rem 1rem 0.5rem 0;"><strong>Nemotron</strong></td>
+        <td style="padding: 0.5rem 1rem;">Reason: power Stagehand's extraction, then synthesise the final dossier</td>
+        <td style="padding: 0.5rem 0;"><code>agent/research.ts</code></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p>Hyperbrowser and Stagehand are connected by a single value: <code>session.wsEndpoint</code>. That WebSocket URL is what Chrome's DevTools Protocol (CDP) listens on — it is how any external program talks to a running browser.</p>
+
+  <h2>File-reading task</h2>
+
+  <div class="callout">
+    <p><strong>Task:</strong> Open these two files side by side. Find the value that flows from one to the other.</p>
+    <p>
+      → <a href="../../../lib/hyperbrowser.ts"><code>lib/hyperbrowser.ts</code></a><br>
+      → <a href="../../../lib/stagehand.ts"><code>lib/stagehand.ts</code></a>
+    </p>
+  </div>
+
+  <p>In <code>hyperbrowser.ts</code>, the session creation returns a <code>session</code> object:</p>
+
+<pre><code>const session = await client.sessions.create({
+  useStealth: true,
+  adblock: true,
+  acceptCookies: true,
+  timeoutMinutes: 2,
+});
+return { client, session };</code></pre>
+
+  <p>In <code>stagehand.ts</code>, that session object's <code>wsEndpoint</code> arrives as the parameter <code>cdpUrl</code>:</p>
+
+<pre><code>export async function createStagehand(cdpUrl: string): Promise<Stagehand> {
+  const stagehand = new Stagehand({
+    env: "LOCAL",
+    localBrowserLaunchOptions: { cdpUrl },
+    model: {
+      modelName: "openai/nvidia/nemotron-3-ultra-550b-a55b:free",
+      apiKey: process.env.OPENROUTER_API_KEY!,
+      baseURL: "https://openrouter.ai/api/v1",
+    },
+    disablePino: true,
+  });
+  await stagehand.init();
+  return stagehand;
+}</code></pre>
+
+  <div class="callout warn">
+    <p><strong>The misleading name:</strong> <code>env: "LOCAL"</code> does not mean the browser runs on your machine. It means "I am supplying the browser via a CDP URL — do not launch one yourself." The browser is running on Hyperbrowser's cloud infrastructure. <code>"LOCAL"</code> tells Stagehand to skip its own browser launch and connect to the URL you provide instead.</p>
+  </div>
+
+  <h2>How Nemotron appears twice</h2>
+
+  <p>Nemotron does two completely separate jobs in this feature. The same model is used, but through different clients:</p>
+
+  <div class="diagram">┌─────────────────── agent/research.ts ──────────────────────┐
+│                                                             │
+│  conductBrowserResearch()                                   │
+│    └─ stagehand.extract(instruction, ZodSchema)             │
+│         └─ Stagehand → Nemotron via OpenRouter              │
+│              "What did this page say about tech stack?"      │
+│                                                             │
+│  synthesizeDossier()                                        │
+│    └─ openai.chat.completions.create(...)                   │
+│         └─ Direct OpenAI-compatible client → Nemotron       │
+│              "Now combine everything into one dossier"       │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘</div>
+
+  <p>The difference is in the client. Stagehand uses its own internal OpenAI provider (which is why the model name needs the <code>"openai/"</code> prefix). <code>synthesizeDossier()</code> uses the OpenAI SDK directly with <code>baseURL: "https://openrouter.ai/api/v1"</code>, so the model name goes straight to OpenRouter without any prefix.</p>
+
+  <h2>Trace the flow</h2>
+
+  <div class="callout">
+    <p><strong>Task:</strong> Open <a href="../../../agent/research.ts"><code>agent/research.ts</code></a> and find the section that starts with <code>let stagehand: Stagehand | null = null</code> (around line 326). Read to the <code>finally</code> block. Answer these without looking back:</p>
+    <ol style="margin: 0.75rem 0; padding-left: 1.5rem; max-width: 60ch;">
+      <li>Which line starts the Hyperbrowser session?</li>
+      <li>Which line creates Stagehand?</li>
+      <li>What single value is passed from one to the other?</li>
+      <li>Which of the three variables (<code>stagehand</code>, <code>session</code>, <code>client</code>) is closed first in <code>finally</code>?</li>
+    </ol>
+  </div>
+
+  <p>The expected answer for question 4: <code>stagehand</code> closes first. The CDP connection between Stagehand and the browser must be gracefully shut down before the browser itself stops. If Hyperbrowser stops first, Stagehand throws an error trying to close a connection to a dead browser.</p>
+
+  <h2>Retrieval questions</h2>
+
+  <div class="quiz">
+    <h3>Check your understanding</h3>
+
+    <div class="quiz-question" id="q1">
+      <p>1. What property does the Hyperbrowser session provide that Stagehand needs to connect?</p>
+      <ul class="quiz-options">
+        <li><button onclick="answer(this,'q1',false)">sessionId — the unique ID of the cloud browser</button></li>
+        <li><button onclick="answer(this,'q1',true)">wsEndpoint — the WebSocket URL for CDP control</button></li>
+        <li><button onclick="answer(this,'q1',false)">liveUrl — the visual URL to watch the browser</button></li>
+        <li><button onclick="answer(this,'q1',false)">apiKey — the Hyperbrowser authentication token</button></li>
+      </ul>
+      <div class="quiz-feedback" id="q1-feedback"></div>
+    </div>
+
+    <div class="quiz-question" id="q2">
+      <p>2. Why does the Stagehand model name use <code>"openai/nvidia/nemotron-3-ultra-550b-a55b:free"</code> but <code>synthesizeDossier()</code> uses <code>"nvidia/nemotron-3-ultra-550b-a55b:free"</code> — the same model, different string?</p>
+      <ul class="quiz-options">
+        <li><button onclick="answer(this,'q2',false)">They call different versions of Nemotron</button></li>
+        <li><button onclick="answer(this,'q2',false)">The prefix changes which OpenRouter tier is used</button></li>
+        <li><button onclick="answer(this,'q2',true)">Stagehand needs the "openai/" prefix to select its internal OpenAI provider; the direct client sends the name straight to OpenRouter</button></li>
+        <li><button onclick="answer(this,'q2',false)">Stagehand does not support OpenRouter, so it needs a special prefix</button></li>
+      </ul>
+      <div class="quiz-feedback" id="q2-feedback"></div>
+    </div>
+
+    <div class="quiz-question" id="q3">
+      <p>3. After <code>createHyperbrowserSession()</code> returns, what is Stagehand still missing before it can extract content from a page?</p>
+      <ul class="quiz-options">
+        <li><button onclick="answer(this,'q3',false)">An OpenRouter API key</button></li>
+        <li><button onclick="answer(this,'q3',false)">A Zod schema to extract into</button></li>
+        <li><button onclick="answer(this,'q3',true)">A page navigation — the browser is connected but no URL has been loaded yet</button></li>
+        <li><button onclick="answer(this,'q3',false)">A profile to compare the company against</button></li>
+      </ul>
+      <div class="quiz-feedback" id="q3-feedback"></div>
+    </div>
+  </div>
+
+  <h2>Predict what happens if…</h2>
+
+  <div class="callout warn">
+    <p><strong>Question:</strong> The Hyperbrowser session is created with <code>timeoutMinutes: 2</code>. What happens if the research run takes 3 minutes — for example, if a company sub-page is extremely slow to load?</p>
+    <p>Think through: does Hyperbrowser kill the session? Does Stagehand notice? Where in the code does the failure appear? Does the user see an error or a partial result?</p>
+  </div>
+
+  <details>
+    <summary style="font-family: -apple-system, sans-serif; font-size: 0.9rem; cursor: pointer; color: #9b5cf6; margin-bottom: 0.5rem;">Reveal answer</summary>
+    <p>After 2 minutes, Hyperbrowser forcibly terminates the session. The CDP WebSocket connection drops. Stagehand's next call (likely a <code>page.goto()</code> or <code>stagehand.extract()</code>) throws an error — "connection closed" or similar. That error is caught by the <code>try/catch</code> inside <code>conductBrowserResearch()</code> (which already wraps each sub-page in its own try/catch). The error is logged to <code>agent_logs</code>. Execution continues to <code>synthesizeDossier()</code>, which runs with whatever partial content was collected before the timeout. The user receives a dossier — possibly with fewer sources or less specific content, but not an error state.</p>
+  </details>
+
+  <h2>Practice exercise (10–15 min)</h2>
+
+  <div class="exercises">
+    <h2>Exercise: Explain the cleanup path</h2>
+
+    <p><strong>File to inspect:</strong> <a href="../../../agent/research.ts"><code>agent/research.ts</code></a> — find the <code>finally</code> block inside <code>researchCompany()</code></p>
+
+    <div class="callout" style="margin: 1rem 0;">
+      <p><strong>Stop and explain before implementing anything.</strong> Before reading the exercise below, write your answer to this question in your own words:</p>
+      <p><em>"Why are stagehand, session, and client each declared as <code>null</code> before the try block, and why are they closed in that specific order?"</em></p>
+      <p>Write your answer somewhere — a comment, a note, a text file. Then compare it to what the exercise reveals.</p>
+    </div>
+
+    <p><strong>Task:</strong> Read the <code>finally</code> block and the three <code>null</code> declarations above it. Answer the following without running any code:</p>
+
+    <ol style="margin: 0.75rem 0; padding-left: 1.5rem; max-width: 60ch;">
+      <li>What happens to the <code>finally</code> block if <code>createHyperbrowserSession()</code> throws — before <code>stagehand</code> or <code>session</code> are ever assigned?</li>
+      <li>What happens to the <code>finally</code> block if <code>createStagehand()</code> throws — after <code>client</code> and <code>session</code> are assigned but before <code>stagehand</code> is assigned?</li>
+      <li>What happens to the <code>finally</code> block if <code>conductBrowserResearch()</code> throws — after all three are assigned?</li>
+    </ol>
+
+    <p><strong>Expected behavior:</strong> The <code>finally</code> block runs in all three scenarios. The <code>if (stagehand)</code> and <code>if (client &amp;&amp; session)</code> guards determine which cleanup actions actually execute, preventing errors from calling methods on variables that were never assigned.</p>
+
+    <p><strong>Manual checks:</strong></p>
+    <ul style="max-width: 60ch; padding-left: 1.5rem;">
+      <li>Scenario 1 (Hyperbrowser creation fails): both guards are false. Neither cleanup runs. No second error is thrown.</li>
+      <li>Scenario 2 (Stagehand creation fails): <code>stagehand</code> is <code>null</code>, so Stagehand cleanup skips. <code>client</code> and <code>session</code> are assigned, so <code>client.sessions.stop(session.id)</code> runs.</li>
+      <li>Scenario 3 (research throws after full init): both guards are true. Stagehand closes first, then the Hyperbrowser session stops.</li>
+    </ul>
+
+    <p><strong>Hint:</strong> The cleanup order (Stagehand first, then Hyperbrowser) matters because Stagehand holds an open CDP connection to the browser. If the browser stops first, Stagehand throws when trying to close a dead connection — which can mask the original error. Closing in dependency order avoids this.</p>
+
+    <p style="font-size: 0.875rem; font-family: -apple-system, sans-serif; color: #555; margin-top: 1.5rem;">
+      📎 Related: <a href="../../../docs/tutorials/24-company-research-agent/README.md">Tutorial 24, Part 2 (RAII pattern)</a> ·
+      <a href="../../../docs/plan/13-company-research-agent/plan.md">plan.md invariants</a>
+    </p>
+  </div>
+
+  <h2>Primary source</h2>
+
+  <p>Read <a href="https://docs.hyperbrowser.ai/get-started/quickstart" target="_blank" rel="noopener noreferrer">Hyperbrowser Quickstart</a> to see how sessions are created and what <code>wsEndpoint</code> actually is. Then read <a href="https://docs.stagehand.dev/overview/introduction" target="_blank" rel="noopener noreferrer">Stagehand Introduction</a> and look for how it connects to an existing browser vs. launching its own.</p>
+
+  <div class="callout">
+    <p><strong>Ask your AI teacher:</strong> If anything in this lesson is unclear — why <code>env: "LOCAL"</code> misleads, what CDP actually is, or how Nemotron ends up doing two different jobs — ask. That's what the teacher is for.</p>
+  </div>
+
+  <div class="lesson-nav">
+    <span style="color: #aaa;">← (start)</span>
+    <span style="font-family: -apple-system, sans-serif; color: #555;">Lesson 1 of 6</span>
+    <a href="0002-fallback-chain.html">Lesson 2: The fallback chain →</a>
+  </div>
+
+</div>
+
+<script>
+const FEEDBACK = {
+  q1: {
+    correct: "Correct. <code>session.wsEndpoint</code> is the Chrome DevTools Protocol WebSocket URL. It's what Stagehand passes to <code>localBrowserLaunchOptions: { cdpUrl }</code>.",
+    wrong: "Not quite. Look at what <code>createStagehand(cdpUrl)</code> receives as its parameter, then trace back to what Hyperbrowser returns."
+  },
+  q2: {
+    correct: "Correct. Stagehand parses <code>modelName</code> at the first <code>/</code> to identify its sub-provider. <code>'openai'</code> is supported; <code>'nvidia'</code> is not. The direct OpenAI client sends the model name straight to OpenRouter, which understands <code>'nvidia/...'</code> natively.",
+    wrong: "Not quite. The key is how Stagehand internally parses the model name string. Read <code>lib/stagehand.ts</code> and note the comment above <code>modelName</code>."
+  },
+  q3: {
+    correct: "Correct. After <code>createStagehand()</code>, Stagehand is connected to the browser but no page has loaded. <code>conductBrowserResearch()</code> calls <code>page.goto(homepageUrl)</code> as its first action.",
+    wrong: "Not quite. Stagehand is already configured with the model and API key at creation time. Think about what the browser itself is pointing at after initialisation."
+  }
+};
+
+function answer(btn, qId, isCorrect) {
+  const question = document.getElementById(qId);
+  const buttons = question.querySelectorAll('button');
+  buttons.forEach(b => b.disabled = true);
+  btn.classList.add(isCorrect ? 'correct' : 'wrong');
+
+  const feedback = document.getElementById(qId + '-feedback');
+  feedback.innerHTML = isCorrect ? FEEDBACK[qId].correct : FEEDBACK[qId].wrong;
+  feedback.className = 'quiz-feedback show ' + (isCorrect ? 'correct' : 'wrong');
+}
+</script>
+</body>
+</html>

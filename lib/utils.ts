@@ -17,3 +17,7 @@ export function formatRelativeDate(dateStr: string): string {
   if (diffDays === 1) return "Yesterday";
   return `${diffDays} days ago`;
 }
+
+export function getIsoTimestampDaysAgo(days: number): string {
+  return new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+}

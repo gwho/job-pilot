@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lesson 3 — Stagehand extraction</title>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<div class="page">
+
+  <div class="progress">
+    <span class="progress-dot done"></span>
+    <span class="progress-dot done"></span>
+    <span class="progress-dot active"></span>
+    <span class="progress-dot"></span>
+    <span class="progress-dot"></span>
+    <span class="progress-dot"></span>
+    <span style="margin-left: 0.5rem;">Lesson 3 of 6</span>
+  </div>
+
+  <h1>Stagehand extraction</h1>
+  <p class="subtitle">Zod schemas are contracts between your code and an AI browser — not just types.</p>
+
+  <div class="lesson-meta">
+    <span>⏱ ~20 min reading + 15 min exercise</span>
+    <span>📘 <a href="../../../tutorials/24-company-research-agent/README.md">Tutorial 24, Part 4</a></span>
+    <span>🗂 <a href="../../../agent/research.ts"><code>agent/research.ts</code> lines 16–34, 132–188</a></span>
+  </div>
+
+  <div class="callout mission">
+    <p><strong>Why this lesson matters:</strong> Stagehand does not return a string you parse yourself. You hand it a Zod schema and it returns a typed object. That schema is not just a TypeScript convenience — it is sent to Nemotron as the output specification. Every field you mark <code>.optional()</code>, every <code>.describe()</code> you write, and every field you make required all change what the model is asked to produce and what happens when the page does not have the data.</p>
+  </div>
+
+  <h2>The concept: schema as AI contract</h2>
+
+  <p>When you call <code>stagehand.extract(instruction, schema)</code>, two things happen under the hood:</p>
+
+  <div class="diagram">1. Stagehand reads the current browser page content
+
+2. It sends to Nemotron (via OpenRouter):
+   - The page content as context
+   - Your instruction string (tells it what to look for)
+   - Your Zod schema converted to a JSON Schema (tells it the output shape)
+
+3. Nemotron returns JSON that matches the schema shape
+
+4. Stagehand validates the JSON against your Zod schema
+
+5. You receive a typed TypeScript object</div>
+
+  <p>This means:</p>
+  <ul style="max-width: 65ch; padding-left: 1.5rem; font-family: -apple-system, sans-serif; font-size: 0.9rem; line-height: 1.7;">
+    <li>The <code>.describe("...")</code> calls are <strong>model instructions</strong>, not code comments — they go into the prompt</li>
+    <li>Making a field <code>.optional()</code> signals to Nemotron that the field is nullable — it will not force-generate a value when the page lacks it</li>
+    <li>Making a field <strong>required</strong> tells Nemotron it must produce something — which can cause hallucination when the page genuinely lacks the content</li>
+    <li>If Nemotron's output doesn't match the schema, Stagehand throws</li>
+  </ul>
+
+  <h2>File-reading task</h2>
+
+  <div class="callout">
+    <p><strong>Task:</strong> Open <a href="../../../agent/research.ts"><code>agent/research.ts</code></a> and read lines 16–34. Before continuing, answer:</p>
+    <ol style="margin: 0.75rem 0; padding-left: 1.5rem; max-width: 60ch;">
+      <li>How many fields in <code>HomepageSchema</code> are <code>.optional()</code>? How many are required?</li>
+      <li>What is the type of <code>pageLinks</code> inside <code>HomepageSchema</code>? Write it out.</li>
+      <li>Which two lines derive TypeScript types from the Zod schemas? What keyword do they use?</li>
+    </ol>
+  </div>
+
+  <p>Here are the two schemas. Read each field carefully:</p>
+
+<pre><code>const HomepageSchema = z.object({
+  oneLiner: z.string()
+    .describe("What the company does in one sentence")
+    .optional(),
+  productSummary: z.string()
+    .describe("What they build/sell and who it's for")
+    .optional(),
+  signals: z.array(z.string())
+    .describe("Funding, notable customers, scale, mission, recent news")
+    .optional(),
+  pageLinks: z.array(z.object({
+    url: z.string(),
+    kind: z.enum(["about", "careers", "blog", "engineering",
+                  "product", "team", "other"]),
+  }))
+    .describe("Internal links worth visiting")
+    .optional(),
+});
+
+const SubpageSchema = z.object({
+  keyPoints: z.array(z.string()).optional(),
+  technologies: z.array(z.string())
+    .describe("Specific languages, frameworks, tools, platforms")
+    .optional(),
+  valuesOrCulture: z.array(z.string())
+    .describe("Stated values, working style, team norms")
+    .optional(),
+  notable: z.array(z.string())
+    .describe("Customers, funding, scale, projects, awards")
+    .optional(),
+});
+
+type HomepageData = z.infer&lt;typeof HomepageSchema&gt;;
+type SubpageData = z.infer&lt;typeof SubpageSchema&gt;;</code></pre>
+
+  <div class="callout warn">
+    <p><strong>Notice:</strong> Every single field is <code>.optional()</code>. This is not laziness — it is correctness. Company websites vary wildly. A page might have a clear one-liner. Or it might be all images. Or it might be a 10,000-word wall of marketing prose. Making fields optional tells Nemotron: "return this if you can find it, return nothing if you cannot." The alternative — required fields — means Nemotron must produce something, and when the data isn't there, it invents it.</p>
+  </div>
+
+  <h2>How <code>.describe()</code> becomes a prompt</h2>
+
+  <p>Consider this field:</p>
+
+<pre><code>signals: z.array(z.string())
+  .describe("Funding, notable customers, scale, mission, recent news")
+  .optional(),</code></pre>
+
+  <p>Stagehand converts this Zod schema to JSON Schema before sending it to Nemotron. The JSON Schema representation of this field looks like:</p>
+
+<pre><code>{
+  "signals": {
+    "type": "array",
+    "items": { "type": "string" },
+    "description": "Funding, notable customers, scale, mission, recent news"
+  }
+}</code></pre>
+
+  <p>That <code>"description"</code> key is read by Nemotron as a hint about what to put in the field. Without it, Nemotron has only the field name <code>"signals"</code> to guide it. With it, it knows specifically to look for funding announcements, named customers, and mission statements. A missing <code>.describe()</code> produces lower-quality extraction — and you can't fix that at runtime.</p>
+
+  <h2>How extraction is called</h2>
+
+  <p>Here is the homepage extraction call (lines 152–155):</p>
+
+<pre><code>const homepageData = await stagehand.extract(
+  "This is a company's homepage. Capture what the company actually does,
+   who it's for, and any concrete signals (funding, customers, scale,
+   mission, recent launches). Then find the internal links most worth
+   visiting to research them as an employer.",
+  HomepageSchema,
+);
+
+content.homepage = homepageData;</code></pre>
+
+  <p>The first argument is the <strong>instruction</strong> — a natural language description of what to look for on the page. The second argument is the <strong>schema</strong> — the typed output shape. They work together: the instruction tells the model what to focus on, the schema tells it what shape to return it in.</p>
+
+  <p>And the sub-page extraction (lines 173–177):</p>
+
+<pre><code>const subData = await stagehand.extract(
+  "Extract substance that helps a candidate understand this company
+   before applying: what they do, their values and how they work,
+   the specific technologies and tools they use, notable projects or
+   customers, and how the team operates. Ignore nav, footers, cookie
+   banners, and generic marketing copy.",
+  SubpageSchema,
+);</code></pre>
+
+  <p>Different instruction, different schema, same pattern. The instruction can tell Nemotron what to <em>ignore</em> — "Ignore nav, footers, cookie banners" — not just what to extract. This is part of the contract too.</p>
+
+  <h2>What happens after extraction fails</h2>
+
+  <p>Look at lines 160–163:</p>
+
+<pre><code>if (!homepageData.oneLiner && !homepageData.productSummary) {
+  return content;
+}</code></pre>
+
+  <p>If Nemotron extracted the homepage but could not find either a one-liner or product summary — the page was probably a login wall, a blank page, or pure image content — the function returns early. There is no error thrown. The sub-pages are simply never visited. Synthesis still runs later with the empty homepage data.</p>
+
+  <p>Sub-page failures are handled individually (lines 179–181):</p>
+
+<pre><code>} catch (subErr) {
+  await logAgentError(userId, job.id,
+    `[agent/research] Sub-page failed (${link.url}): ${String(subErr)}`);
+}</code></pre>
+
+  <p>Each sub-page has its own try/catch inside the loop. A failure on one sub-page does not stop the others. The error is logged to <code>agent_logs</code>, and the loop continues. This is deliberate: partial data is better than no data, and synthesis can always work with whatever was collected.</p>
+
+  <h2>Trace the flow</h2>
+
+  <div class="callout">
+    <p><strong>Task:</strong> Trace the execution path for a job where the homepage loads successfully but has zero internal links (a single-page site with no nav). Start at line 132 and trace every line that runs. Which lines are skipped?</p>
+  </div>
+
+  <details>
+    <summary style="font-family: -apple-system, sans-serif; font-size: 0.9rem; cursor: pointer; color: #9b5cf6; margin-bottom: 0.5rem;">Reveal trace</summary>
+    <p><strong>Line 138–143:</strong> <code>content</code> initialized with empty homepage, empty subpages array.</p>
+    <p><strong>Line 145:</strong> enter outer try block</p>
+    <p><strong>Lines 146–147:</strong> get active page. Assume page exists.</p>
+    <p><strong>Lines 149–150:</strong> <code>page.goto(homepageUrl)</code> — page loads. <code>waitForLoadState("networkidle")</code> — wait for network quiet.</p>
+    <p><strong>Lines 152–155:</strong> <code>stagehand.extract(..., HomepageSchema)</code> — Nemotron extracts from the page. Returns something like <code>{ oneLiner: "Acme builds cloud tools", pageLinks: [] }</code>.</p>
+    <p><strong>Lines 157–158:</strong> <code>content.homepage = homepageData</code>. <code>visitedUrls.push(homepageUrl)</code>.</p>
+    <p><strong>Lines 160–162:</strong> <code>homepageData.oneLiner</code> exists, so the early return is NOT taken.</p>
+    <p><strong>Lines 165–167:</strong> <code>homepageData.pageLinks ?? []</code> is <code>[]</code>. After filter, still <code>[]</code>. After <code>.slice(0, 3)</code>, still <code>[]</code>.</p>
+    <p><strong>Lines 169–182:</strong> <code>for (const link of links)</code> — loop body never executes. Zero iterations.</p>
+    <p><strong>Line 187:</strong> return <code>content</code> — homepage data populated, subpages empty array.</p>
+    <p>Synthesis receives homepage data but no sub-page content. It will work from the homepage one-liner and product summary only.</p>
+  </details>
+
+  <h2>Retrieval questions</h2>
+
+  <div class="quiz">
+    <h3>Check your understanding</h3>
+
+    <div class="quiz-question" id="q1">
+      <p>1. Why is <code>.describe("Specific languages, frameworks, tools, platforms")</code> on the <code>technologies</code> field meaningful beyond documentation?</p>
+      <ul class="quiz-options">
+        <li><button onclick="answer(this,'q1',false)">It generates TypeScript JSDoc comments that appear in IDE hover tooltips</button></li>
+        <li><button onclick="answer(this,'q1',true)">Stagehand converts it to a JSON Schema <code>"description"</code> field that Nemotron reads as a prompt hint about what content belongs in this field</button></li>
+        <li><button onclick="answer(this,'q1',false)">It tells Zod to validate that strings contain only technology-related words</button></li>
+        <li><button onclick="answer(this,'q1',false)">It prevents Nemotron from including general company information in this field</button></li>
+      </ul>
+      <div class="quiz-feedback" id="q1-feedback"></div>
+    </div>
+
+    <div class="quiz-question" id="q2">
+      <p>2. The <code>kind</code> field inside <code>pageLinks</code> is typed as <code>z.enum([...])</code>. What happens if Nemotron returns a link with <code>kind: "press"</code>?</p>
+      <ul class="quiz-options">
+        <li><button onclick="answer(this,'q2',false)">Stagehand ignores the unknown value and returns <code>undefined</code> for that field</button></li>
+        <li><button onclick="answer(this,'q2',false)">TypeScript catches this at compile time and prevents the build</button></li>
+        <li><button onclick="answer(this,'q2',true)">Zod validation throws, Stagehand propagates the error, and the outer catch at line 183 catches it and logs to agent_logs</button></li>
+        <li><button onclick="answer(this,'q2',false)">The enum coerces "press" to the closest matching value ("other")</button></li>
+      </ul>
+      <div class="quiz-feedback" id="q2-feedback"></div>
+    </div>
+
+    <div class="quiz-question" id="q3">
+      <p>3. Sub-page extraction runs inside its own inner <code>try/catch</code> nested inside the outer <code>try</code>. Why are there two levels of try/catch?</p>
+      <ul class="quiz-options">
+        <li><button onclick="answer(this,'q3',false)">TypeScript requires nested try/catch for async operations inside loops</button></li>
+        <li><button onclick="answer(this,'q3',false)">The outer catch handles network errors; the inner catch handles Zod validation errors</button></li>
+        <li><button onclick="answer(this,'q3',true)">The inner catch isolates per-page failures so one failing sub-page doesn't abort the others; the outer catch handles unrecoverable failures like the active page not existing at all</button></li>
+        <li><button onclick="answer(this,'q3',false)">Both catch blocks do the same thing — the inner one is only there for faster error feedback</button></li>
+      </ul>
+      <div class="quiz-feedback" id="q3-feedback"></div>
+    </div>
+  </div>
+
+  <h2>Predict what happens if…</h2>
+
+  <div class="callout warn">
+    <p><strong>Question:</strong> Suppose you removed <code>.optional()</code> from <code>oneLiner</code> in <code>HomepageSchema</code>. The field is now required. You research a company whose homepage is a full-page video with no text — Nemotron reads the page and cannot find a one-liner.</p>
+    <p>Walk through exactly what happens at runtime: which line throws, what type of error is it, what catches it, where does the error end up, and does the user see it?</p>
+  </div>
+
+  <details>
+    <summary style="font-family: -apple-system, sans-serif; font-size: 0.9rem; cursor: pointer; color: #9b5cf6; margin-bottom: 0.5rem;">Reveal answer</summary>
+    <p>Nemotron, facing a required field with no data on the page, has two choices: hallucinate something or return nothing. If it returns nothing (omits <code>oneLiner</code>), Zod validation fails at line 152 when Stagehand validates the response against <code>HomepageSchema</code>. The error is a <code>ZodError</code> with a message like <code>"Required"</code> at path <code>["oneLiner"]</code>.</p>
+    <p>This throws inside the outer <code>try</code> block (lines 145–185). It is caught at line 183. <code>logAgentError()</code> logs: <code>"[agent/research] Homepage extraction failed: ZodError..."</code> to <code>agent_logs</code>.</p>
+    <p>Execution reaches line 187: <code>return content</code> — with empty homepage data. Back in <code>researchCompany()</code>, synthesis still runs. The user sees a dossier generated from the job description and their profile only. They never see the error. The user experience is identical to a page that loaded but had thin content.</p>
+    <p><strong>The second risk:</strong> Nemotron might not omit it — it might hallucinate a plausible one-liner for the company. The dossier would contain a fabricated company description presented as fact. This is why the whole schema is <code>.optional()</code>: empty is honest; invented is dangerous.</p>
+  </details>
+
+  <h2>Practice exercise (10–15 min)</h2>
+
+  <div class="exercises">
+    <h2>Exercise: Predict a schema failure</h2>
+
+    <p><strong>File:</strong> <a href="../../../agent/research.ts"><code>agent/research.ts</code></a> — <code>HomepageSchema</code> and <code>conductBrowserResearch()</code></p>
+
+    <div class="callout" style="margin: 1rem 0;">
+      <p><strong>Do not run any code.</strong> This exercise is entirely about reading and reasoning. The goal is to build the mental model of what Zod + Stagehand do at runtime so you can predict failures without trial and error.</p>
+    </div>
+
+    <p><strong>Scenario A — Required field, sparse page:</strong></p>
+    <p>In your editor, read <code>HomepageSchema</code>. Now mentally remove <code>.optional()</code> from <code>signals</code>. The field is now required and typed <code>z.array(z.string())</code>.</p>
+    <p>For each scenario below, write down what you predict happens:</p>
+    <ol style="padding-left: 1.5rem; max-width: 64ch; line-height: 1.9; font-family: -apple-system, sans-serif; font-size: 0.875rem;">
+      <li>The homepage mentions <code>"$50M Series B"</code> and <code>"10,000 enterprise customers"</code>. Nemotron finds these and returns <code>signals: ["$50M Series B", "10,000 enterprise customers"]</code>. What happens?</li>
+      <li>The homepage has no funding or customer mentions. Nemotron cannot find anything for <code>signals</code>. It omits the field from the response. What happens?</li>
+      <li>The homepage has no signals, but Nemotron returns <code>signals: []</code> (an empty array) to satisfy the requirement. Does Zod accept this? What is the downstream effect on synthesis?</li>
+    </ol>
+
+    <p><strong>Scenario B — Schema and instruction mismatch:</strong></p>
+    <p>The <code>pageLinks</code> field expects <code>z.enum(["about", "careers", "blog", "engineering", "product", "team", "other"])</code>. But the instruction says <code>"find the internal links most worth visiting"</code> — it does not tell Nemotron about the enum.</p>
+    <ol style="padding-left: 1.5rem; max-width: 64ch; line-height: 1.9; font-family: -apple-system, sans-serif; font-size: 0.875rem;" start="4">
+      <li>How does Nemotron know to return one of those seven values and not something like <code>"press-release"</code> or <code>"contact"</code>?</li>
+      <li>If Nemotron returns <code>kind: "newsroom"</code> (a value not in the enum), which line in <code>conductBrowserResearch()</code> throws first? Identify the line number.</li>
+    </ol>
+
+    <p><strong>Manual check once done:</strong> Find the <code>if (!homepageData.oneLiner && !homepageData.productSummary)</code> guard. If <code>signals</code> was required and Nemotron returned an empty array to satisfy it (Scenario A, case 3), does this early-return guard fire?</p>
+
+    <p style="font-size: 0.875rem; font-family: -apple-system, sans-serif; color: #555; margin-top: 1.5rem;">
+      📎 Related: <a href="../../../docs/tutorials/24-company-research-agent/README.md">Tutorial 24, Part 4 (Stagehand extraction)</a> ·
+      <a href="../../../docs/plan/13-company-research-agent/explanation.md">explanation.md §Zod schemas</a>
+    </p>
+  </div>
+
+  <h2>Primary source</h2>
+
+  <p>Read the <a href="https://zod.dev/?id=basic-usage" target="_blank" rel="noopener noreferrer">Zod basic usage guide</a> — specifically the sections on <code>optional()</code>, <code>describe()</code>, and <code>z.infer&lt;&gt;</code>. These three features are the ones this feature relies on.</p>
+
+  <div class="callout">
+    <p><strong>Ask your AI teacher:</strong> Ask it to explain JSON Schema and how Zod schemas convert to it. The connection between <code>z.string().describe("...")</code> and <code>{ "type": "string", "description": "..." }</code> in JSON Schema is the bridge between your TypeScript code and what Nemotron actually receives.</p>
+  </div>
+
+  <div class="lesson-nav">
+    <a href="0002-fallback-chain.html">← Lesson 2: The fallback chain</a>
+    <span style="font-family: -apple-system, sans-serif; color: #555;">Lesson 3 of 6</span>
+    <a href="0004-nemotron-synthesis.html">Lesson 4: Nemotron synthesis →</a>
+  </div>
+
+</div>
+
+<script>
+const FEEDBACK = {
+  q1: {
+    correct: "Correct. Stagehand uses your Zod schema to build a JSON Schema, and the JSON Schema description field is passed to Nemotron as part of the output specification. Without the describe(), Nemotron knows only that 'technologies' is an array of strings — it might include team size or company values there. The describe() channels it toward languages, frameworks, and tools.",
+    wrong: "Not quite. Zod's .describe() has no effect on validation — Zod ignores it. It exists solely to annotate the schema. The question is: who reads that annotation? It's Stagehand, when it converts the Zod schema to a JSON Schema for Nemotron."
+  },
+  q2: {
+    correct: "Correct. Zod's z.enum() is strict — only the listed values pass validation. Stagehand validates Nemotron's response against the schema before returning. A ZodError throws at line 152, is caught at line 183, logged to agent_logs, and execution continues with whatever content was collected so far.",
+    wrong: "Zod does not coerce enum values, and TypeScript cannot catch runtime values from an external API. Think about when Zod validation runs — it runs at runtime when Stagehand receives Nemotron's JSON response. The enum is a runtime contract, not a compile-time one."
+  },
+  q3: {
+    correct: "Correct. The two levels of try/catch have different scopes of protection. The inner catch (lines 179–181) is per-link: if one sub-page fails, log it and continue to the next. The outer catch (lines 183–185) is for the homepage itself — if the page can't load or extraction completely fails, log and return whatever partial content exists.",
+    wrong: "Think about what the inner try/catch surrounds vs. what the outer one surrounds. The inner one is inside the for loop, so its scope is exactly one link at a time. The outer one wraps everything from 'get active page' to 'visit all links'. What does per-link isolation achieve that a single outer catch can't?"
+  }
+};
+
+function answer(btn, qId, isCorrect) {
+  const question = document.getElementById(qId);
+  const buttons = question.querySelectorAll('button');
+  buttons.forEach(b => b.disabled = true);
+  btn.classList.add(isCorrect ? 'correct' : 'wrong');
+
+  const feedback = document.getElementById(qId + '-feedback');
+  feedback.innerHTML = isCorrect ? FEEDBACK[qId].correct : FEEDBACK[qId].wrong;
+  feedback.className = 'quiz-feedback show ' + (isCorrect ? 'correct' : 'wrong');
+}
+</script>
+</body>
+</html>
