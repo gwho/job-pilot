@@ -79,9 +79,12 @@
 │   │   ├── HowItWorks.tsx
 │   │   └── Features.tsx
 │   ├── dashboard/
+│   │   ├── ProfileBanner.tsx
 │   │   ├── StatsBar.tsx
 │   │   ├── RecentActivity.tsx
-│   │   └── AnalyticsCharts.tsx
+│   │   ├── CompanyResearchChart.tsx    (replaces AnalyticsCharts.tsx — one component per file)
+│   │   ├── JobsFoundChart.tsx
+│   │   └── MatchScoreChart.tsx
 │   ├── profile/
 │   │   ├── ProfileForm.tsx
 │   │   ├── ResumeUpload.tsx

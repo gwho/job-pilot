@@ -339,5 +339,6 @@ Approved dependencies for this project:
 - `lucide-react` — Icons
 - `tailwindcss` — Styling
 - `shadcn/ui` components — UI primitives
+- `recharts` — Dashboard charts (bar, area/line). Feature 14 mock data; Feature 17 real PostHog data.
 
 Do not install any other packages without updating this list first.

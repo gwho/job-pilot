@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lesson 2 — The mock data seam</title>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<div class="page">
+
+  <div class="progress">
+    <span class="progress-dot done"></span>
+    <span class="progress-dot active"></span>
+    <span class="progress-dot"></span>
+    <span class="progress-dot"></span>
+    <span style="margin-left: 0.5rem;">Lesson 2 of 4</span>
+  </div>
+
+  <h1>The mock data seam</h1>
+  <p class="subtitle">Why all data lives in <code>page.tsx</code> — and why that decision matters for Features 15–17</p>
+
+  <div class="lesson-meta">
+    <span>⏱ ~20 min</span>
+    <span>📘 Tutorial 27, Part 1</span>
+    <span>🎯 Feature 14 → 15 → 16 → 17</span>
+  </div>
+
+  <div class="callout mission">
+    <p><strong>Why this lesson matters for your mission:</strong> This pattern — designing a data interface before the real data source exists — is one of the most transferable skills in software. It shows up in freelance projects ("I'll wire your real CMS data later, but here's the layout now"), data engineering ("I'll define the schema first, then fill it"), and sales tools ("here's what the dashboard will look like with your actual numbers"). Understanding the seam is understanding how to separate design from data.</p>
+  </div>
+
+  <h2>The problem: data sources aren't always ready</h2>
+
+  <p>When Feature 14 was built, three future features didn't exist yet:</p>
+
+  <ul style="max-width: 68ch; line-height: 2;">
+    <li><strong>Feature 15</strong> — real stat numbers from the database</li>
+    <li><strong>Feature 16</strong> — real activity rows from <code>agent_runs</code></li>
+    <li><strong>Feature 17</strong> — real chart data from PostHog analytics</li>
+  </ul>
+
+  <p>The dashboard UI needed to be built anyway — to verify the layout, the design system, and the component structure. But what do you put in the charts when PostHog isn't wired yet? What numbers do you show in the stat cards when the database queries haven't been written?</p>
+
+  <p>The answer is mock data. But <em>where</em> that mock data lives — and what shape it takes — determines how hard or easy Features 15–17 will be.</p>
+
+  <h2>The seam: one file controls all data</h2>
+
+  <p>Open <code>app/dashboard/page.tsx</code> and look at the first 90 lines. Every piece of data the dashboard renders is defined here, at module level, before the component function:</p>
+
+<pre><code>const mockStats: StatCardConfig[] = [
+  {
+    label: "Total Jobs Found",
+    value: "284",
+    trend: { value: "+12%", label: "vs last week" },
+  },
+  // ...
+];
+
+const mockActivity: ActivityItem[] = [
+  { type: "search", label: "Found 8 jobs for Frontend Engineer", timeAgo: "10 mins ago" },
+  // ...
+];
+
+const mockCompanyResearchData = [
+  { day: "Mon", count: 2 },
+  // ...
+];</code></pre>
+
+  <p>These constants are passed as props to every component that renders them:</p>
+
+<pre><code>&lt;StatsBar stats={mockStats} /&gt;
+&lt;RecentActivity items={mockActivity} /&gt;
+&lt;CompanyResearchChart data={mockCompanyResearchData} /&gt;</code></pre>
+
+  <p>The components themselves contain no data. <code>StatsBar</code> renders whatever it receives in <code>stats</code>. <code>CompanyResearchChart</code> renders whatever it receives in <code>data</code>. They don't know — and don't care — whether those values came from mock constants or a real database query.</p>
+
+  <div class="diagram">Feature 14 (today)         Feature 17 (future)
+─────────────────────────   ──────────────────────────────────
+
+page.tsx                    page.tsx
+│                           │
+├── mockCompanyData ─────►  ├── real PostHog query ────►
+│   [{ day, count }]        │   [{ day, count }]
+│                           │   (same shape!)
+▼                           ▼
+CompanyResearchChart        CompanyResearchChart
+(unchanged)                 (unchanged)
+</div>
+
+  <p>The swap from mock to real requires changing exactly one line: the value passed to <code>data={...}</code>. The component file never opens.</p>
+
+  <div class="callout">
+    <p><strong>This is the seam.</strong> A seam is a place where you can substitute one behavior for another without editing the code at that place. <code>page.tsx</code> is the seam. Features 15–17 work by swapping what <code>page.tsx</code> passes in — not by modifying the components that receive the data.</p>
+  </div>
+
+  <h2>Why the shape of mock data matters</h2>
+
+  <p>Look at the chart mock data shape:</p>
+
+<pre><code>const mockCompanyResearchData = [
+  { day: "Mon", count: 2 },
+  { day: "Tue", count: 5 },
+  { day: "Wed", count: 3 },
+  // ...
+];</code></pre>
+
+  <p>This shape — <code>{ day: string; count: number }[]</code> — was not chosen arbitrarily. It mirrors what a PostHog time-bucketed event query returns after transformation. When Feature 17 is built, the PostHog query will produce data in (roughly) this structure, which gets transformed into exactly this shape before being passed to the chart.</p>
+
+  <p>If the mock data had used a different shape — say <code>{ label: string; value: number }[]</code> — the component would be built for the wrong interface. Feature 17 would have to either transform the PostHog data into the wrong shape, or change the component's prop type (a breaking change).</p>
+
+  <p>Designing mock data to match the eventual real data is a form of API design. You're writing a contract: "this is what the component will accept, and this is what the data source must produce."</p>
+
+  <h2>Module level vs. inside the function</h2>
+
+  <p>Notice that the mock constants are declared at module level — <em>outside</em> the <code>DashboardPage()</code> function. This is deliberate.</p>
+
+  <p>A Server Component page function runs on every HTTP request. If <code>mockStats</code> were declared inside <code>DashboardPage()</code>, a new array would be allocated in memory on every page visit. The content would be identical, but the allocation is unnecessary work for data that never changes between requests.</p>
+
+  <p>Module-level constants are created once when the file is loaded, then reused on every request. For mock data, this is always the right location. For real data (data that depends on the authenticated user), it must be inside the function — because it changes per request.</p>
+
+  <h2>Quick check — before the quiz</h2>
+
+  <p>Before you answer the quiz, close your eyes and think through:</p>
+  <ul style="max-width: 68ch; line-height: 2;">
+    <li>If <code>CompanyResearchChart</code> defined its own mock data internally, how many files would Feature 17 need to touch?</li>
+    <li>Why does the mock data shape matter, not just the mock data values?</li>
+    <li>What is the difference between module-level and function-level constants for a Server Component page?</li>
+  </ul>
+
+  <div class="quiz">
+    <h3>Quiz — check your understanding</h3>
+
+    <div class="quiz-question">
+      <p>1. Feature 15 will add real database queries for the four stat cards. Which files need to change?</p>
+      <ul class="quiz-options">
+        <li><button onclick="answer(this, false, 'q1')">StatsBar.tsx — it needs to fetch its own real data.</button></li>
+        <li><button onclick="answer(this, false, 'q1')">StatsBar.tsx and StatCard — both need to handle real numbers.</button></li>
+        <li><button onclick="answer(this, true, 'q1')">Only page.tsx — the database queries go there, and the result is passed to &lt;StatsBar stats={realStats} /&gt;. The component files don't change.</button></li>
+        <li><button onclick="answer(this, false, 'q1')">page.tsx and StatsBar.tsx — the type definitions need to be updated too.</button></li>
+      </ul>
+      <div class="quiz-feedback" id="q1-feedback"></div>
+    </div>
+
+    <div class="quiz-question">
+      <p>2. The mock chart data uses <code>{ day: string; count: number }[]</code>. Why was this specific shape chosen, rather than <code>{ label: string; value: number }[]</code>?</p>
+      <ul class="quiz-options">
+        <li><button onclick="answer(this, false, 'q2')">Because "day" and "count" are shorter property names, which makes the mock data easier to read.</button></li>
+        <li><button onclick="answer(this, true, 'q2')">Because this shape mirrors what a PostHog time-bucketed event query returns after transformation. The mock data is a data contract — it defines what the real data source must produce in Feature 17.</button></li>
+        <li><button onclick="answer(this, false, 'q2')">Because recharts only accepts data objects with "day" and "count" properties.</button></li>
+        <li><button onclick="answer(this, false, 'q2')">Because InsForge queries return data in this shape by default.</button></li>
+      </ul>
+      <div class="quiz-feedback" id="q2-feedback"></div>
+    </div>
+
+    <div class="quiz-question">
+      <p>3. <code>mockActivity</code> is declared at module level in <code>page.tsx</code>. If 1,000 users visit the dashboard simultaneously, how many times is this array allocated in memory?</p>
+      <ul class="quiz-options">
+        <li><button onclick="answer(this, false, 'q3')">1,000 times — once per request, since it's in a Server Component.</button></li>
+        <li><button onclick="answer(this, false, 'q3')">5 times — once per item in the array.</button></li>
+        <li><button onclick="answer(this, true, 'q3')">Once — module-level constants are created when the module loads, not when the function runs. All 1,000 requests share the same array reference.</button></li>
+        <li><button onclick="answer(this, false, 'q3')">0 times — Next.js strips mock data during the production build.</button></li>
+      </ul>
+      <div class="quiz-feedback" id="q3-feedback"></div>
+    </div>
+
+    <div class="quiz-question">
+      <p>4. Imagine <code>CompanyResearchChart</code> was built with its own internal mock data instead of a <code>data</code> prop. When Feature 17 arrives, what is the minimum set of changes required to wire real PostHog data?</p>
+      <ul class="quiz-options">
+        <li><button onclick="answer(this, false, 'q4')">Only page.tsx — same as today's design.</button></li>
+        <li><button onclick="answer(this, true, 'q4')">CompanyResearchChart.tsx must be opened and modified to: (1) add a data prop, (2) remove the internal mock, (3) update the component's type definition. Plus page.tsx must pass the real data in. Two files, a breaking API change.</button></li>
+        <li><button onclick="answer(this, false, 'q4')">CompanyResearchChart.tsx only — page.tsx doesn't need to know about the data source.</button></li>
+        <li><button onclick="answer(this, false, 'q4')">No changes — recharts reads from PostHog automatically once it's configured.</button></li>
+      </ul>
+      <div class="quiz-feedback" id="q4-feedback"></div>
+    </div>
+
+    <div class="quiz-score" id="quiz-score" style="display: none;"></div>
+  </div>
+
+  <h2>Try it in the real codebase</h2>
+
+  <p>Open <code>components/dashboard/CompanyResearchChart.tsx</code>. Notice: no internal data, no imports from any data source. The entire file is a pure rendering function that takes a <code>data</code> prop and draws a chart.</p>
+
+  <p>Now open <code>app/dashboard/page.tsx</code> and find line 116:</p>
+
+<pre><code>&lt;CompanyResearchChart data={mockCompanyResearchData} /&gt;</code></pre>
+
+  <p>This is the seam. Feature 17 changes this one prop value. The chart component, its imports, its type definitions — all unchanged.</p>
+
+  <div class="callout">
+    <p><strong>One thing to tell a client or portfolio reviewer:</strong> "The charts are built with placeholder data right now, but the component API is already designed to accept real analytics data. Wiring the real data is a targeted change in one file — not a rebuild of the chart components."</p>
+  </div>
+
+  <h2>Primary resource for this lesson</h2>
+
+  <a class="resource-link" href="https://martinfowler.com/articles/mocksArentStubs.html" target="_blank" rel="noopener noreferrer">
+    Martin Fowler — Mocks Aren't Stubs →
+  </a>
+
+  <p style="font-size: 0.9rem; color: #555; font-family: sans-serif;">Read the "Test Doubles" section. It describes the same concept at the testing level — designing interfaces that accept substitutes — which is exactly what the mock data seam is doing at the component level.</p>
+
+  <p style="font-size: 0.9rem; color: #555; font-family: sans-serif; margin-top: 1rem;">💬 Ask your agent: <em>"In the JobPilot dashboard, explain why the mock data arrays are typed as StatCardConfig[] and ActivityItem[] even though they're just hardcoded values. What does the type annotation buy us?"</em></p>
+
+  <div class="exercises">
+    <h2>Exercises</h2>
+
+    <div class="exercise">
+      <div class="exercise-header">
+        <span class="exercise-num">Exercise 1</span>
+        <span class="exercise-type modify">Modify</span>
+      </div>
+      <p>In <code>app/dashboard/page.tsx</code>, add a 6th item to <code>mockActivity</code>:</p>
+      <pre><code>{ type: "research", label: "Researched Anthropic", timeAgo: "3 days ago" }</code></pre>
+      <p>Save and reload <code>http://localhost:3000/dashboard</code>. Count the activity rows. The new item should appear without touching <code>RecentActivity.tsx</code>. That's the seam: the prop is the only channel between data and display.</p>
+      <details class="exercise-hint">
+        <summary>Hint</summary>
+        <div class="hint-body">The <code>type</code> field must be exactly <code>"search"</code> or <code>"research"</code>. TypeScript will show an error if you use anything else — because <code>ActivityItem.type</code> is a union type <code>"search" | "research"</code>, not a plain string. This is the type contract enforcing correctness at the seam boundary.</div>
+      </details>
+    </div>
+
+    <div class="exercise">
+      <div class="exercise-header">
+        <span class="exercise-num">Exercise 2</span>
+        <span class="exercise-type trace">Trace</span>
+      </div>
+      <p>In <code>app/dashboard/page.tsx</code>, move <code>mockActivity</code> from module level (outside <code>DashboardPage()</code>) to inside the function body — just below the <code>const userId</code> line. The dashboard should render identically.</p>
+      <p>Now answer in your notes: on 1,000 simultaneous requests, how many array allocations happen for each version? Which is correct for static data — and why?</p>
+      <p>Undo the change before moving to Lesson 3.</p>
+      <details class="exercise-hint">
+        <summary>Hint</summary>
+        <div class="hint-body">Module-level: the array is created once when Node.js loads the file. All 1,000 requests share that one reference. Inside the function: a new array is allocated on every call — 1,000 requests, 1,000 allocations. For data that never changes between requests, module-level is always the right location.</div>
+      </details>
+    </div>
+  </div>
+
+  <div class="lesson-nav">
+    <a href="0001-server-client-data-boundaries.html">← Lesson 1: When does code run?</a>
+    <a href="0003-css-tokens-in-svg.html">Next: Lesson 3 — CSS tokens inside charts →</a>
+  </div>
+
+</div>
+
+<script>
+  const answers = {};
+  let score = 0;
+  let answered = 0;
+  const total = 4;
+
+  const feedbacks = {
+    q1: {
+      correct: 'Exactly. StatsBar accepts any StatCardConfig[] — it has no opinion about where the data comes from. Only the caller (page.tsx) knows the source.',
+      wrong: 'The component doesn\'t need to change because its props API already accepts the right shape. The query goes in page.tsx, which already controls what gets passed down.'
+    },
+    q2: {
+      correct: 'Correct. Mock data is a contract, not just placeholder content. It says: "whoever provides real data must produce this shape." Feature 17\'s PostHog transformation must output { day, count }[] to satisfy it.',
+      wrong: 'The shape is a data contract. It was chosen to match what the real data source (PostHog) will produce after transformation — so the component is already ready for real data without any changes.'
+    },
+    q3: {
+      correct: 'Exactly. Module-level constants are shared across all requests to the same server process. They\'re created once on module load, not per-request.',
+      wrong: 'Module-level means "evaluated once when the module is imported," not per-function-call. Inside the function body would mean per-request. At module level, all concurrent requests share the same reference.'
+    },
+    q4: {
+      correct: 'Right. That\'s why the current design — prop from the start — avoids this. Adding a prop to an existing component is a breaking change for all callers.',
+      wrong: 'If the component owned its data internally, Feature 17 would need to open and edit the component: add a prop, remove the internal mock, update types. That\'s the cost avoided by the seam design.'
+    }
+  };
+
+  function answer(button, isCorrect, questionId) {
+    if (answers[questionId]) return;
+    answers[questionId] = true;
+    answered++;
+    if (isCorrect) score++;
+
+    button.closest('.quiz-options').querySelectorAll('button').forEach(b => b.disabled = true);
+    button.classList.add(isCorrect ? 'correct' : 'wrong');
+
+    const fb = document.getElementById(questionId + '-feedback');
+    fb.textContent = (isCorrect ? '✓ ' : '✗ ') + feedbacks[questionId][isCorrect ? 'correct' : 'wrong'];
+    fb.className = 'quiz-feedback show ' + (isCorrect ? 'correct' : 'wrong');
+
+    if (answered === total) {
+      const el = document.getElementById('quiz-score');
+      el.style.display = 'block';
+      el.textContent = `Score: ${score}/${total}. ${score === total ? '✓ Perfect — move to Lesson 3.' : 'Review the explanations above, then re-read page.tsx lines 12–89 before continuing.'}`;
+    }
+  }
+</script>
+
+</body>
+</html>

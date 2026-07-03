@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lesson 4 — Phase boundaries and data contracts</title>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<div class="page">
+
+  <div class="progress">
+    <span class="progress-dot done"></span>
+    <span class="progress-dot done"></span>
+    <span class="progress-dot done"></span>
+    <span class="progress-dot active"></span>
+    <span style="margin-left: 0.5rem;">Lesson 4 of 4</span>
+  </div>
+
+  <h1>Phase boundaries and data contracts</h1>
+  <p class="subtitle">How the dashboard moves from mock to real data — and what this teaches about data pipelines</p>
+
+  <div class="lesson-meta">
+    <span>⏱ ~20 min</span>
+    <span>📘 Tutorial 27, Parts 1 &amp; 2 + Explanation §1–2</span>
+    <span>🎯 Features 14 → 15 → 16 → 17</span>
+  </div>
+
+  <div class="callout mission">
+    <p><strong>Why this lesson matters for your mission:</strong> The four dashboard features (14–17) are a mini data pipeline: UI layer → database metrics → event logs → analytics. Every real data dashboard follows this same pattern. Understanding how the phases are separated — and why — gives you a mental model for describing any data project: what data lives where, who transforms it, and what contract each layer must meet.</p>
+  </div>
+
+  <h2>The four phases of the dashboard</h2>
+
+  <p>The dashboard doesn't get fully wired in one feature. It is built in deliberate phases:</p>
+
+  <table style="border-collapse: collapse; font-family: -apple-system, sans-serif; font-size: 0.9rem; margin: 1.5rem 0; max-width: 68ch;">
+    <thead>
+      <tr style="border-bottom: 2px solid #e5e5e0;">
+        <th style="padding: 0.5rem 1rem 0.5rem 0; text-align: left;">Feature</th>
+        <th style="padding: 0.5rem 1rem; text-align: left;">What becomes real</th>
+        <th style="padding: 0.5rem 0; text-align: left;">Data source</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr style="border-bottom: 1px solid #e5e5e0;">
+        <td style="padding: 0.5rem 1rem 0.5rem 0; font-weight: 600;">14 — UI</td>
+        <td style="padding: 0.5rem 1rem;">Profile banner only</td>
+        <td style="padding: 0.5rem 0;"><code>profiles</code> table</td>
+      </tr>
+      <tr style="border-bottom: 1px solid #e5e5e0;">
+        <td style="padding: 0.5rem 1rem 0.5rem 0; font-weight: 600;">15 — Stats</td>
+        <td style="padding: 0.5rem 1rem;">4 stat cards</td>
+        <td style="padding: 0.5rem 0;"><code>jobs</code>, <code>agent_runs</code> tables</td>
+      </tr>
+      <tr style="border-bottom: 1px solid #e5e5e0;">
+        <td style="padding: 0.5rem 1rem 0.5rem 0; font-weight: 600;">16 — Activity</td>
+        <td style="padding: 0.5rem 1rem;">Recent activity list</td>
+        <td style="padding: 0.5rem 0;"><code>agent_runs</code> table</td>
+      </tr>
+      <tr>
+        <td style="padding: 0.5rem 1rem 0.5rem 0; font-weight: 600;">17 — Charts</td>
+        <td style="padding: 0.5rem 1rem;">3 analytics charts</td>
+        <td style="padding: 0.5rem 0;">PostHog event API</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p>Each phase introduces a new data source with a different character:</p>
+  <ul style="max-width: 68ch; line-height: 2;">
+    <li><strong>Database rows</strong> (Features 15, 16) — structured, queryable, owned by the application. Count rows, filter by date, join tables.</li>
+    <li><strong>Analytics events</strong> (Feature 17) — time-series event stream, owned by a third party (PostHog). Aggregate events, bucket by day, filter by event name.</li>
+  </ul>
+
+  <h2>The data contract: what each component is promised</h2>
+
+  <p>A "data contract" is the shape a component is promised it will receive. In TypeScript, the contract is the prop type. In the dashboard, every component's contract is visible in its type definition.</p>
+
+  <p>Open <code>components/dashboard/StatsBar.tsx</code> and find the exported type:</p>
+
+<pre><code>export type StatCardConfig = {
+  label: string;
+  value: string;
+  trend?: { value: string; label: string };
+  subtitle?: string;
+};</code></pre>
+
+  <p>This is the contract. Feature 15 must produce an array of objects that satisfy this shape. The database query result — whatever form it takes — must be transformed to match before being passed to <code>StatsBar</code>. The component never knows whether those strings came from a database or a constant in <code>page.tsx</code>.</p>
+
+  <p>Similarly, <code>ActivityItem</code> in <code>RecentActivity.tsx</code> is the contract for Feature 16:</p>
+
+<pre><code>export type ActivityItem = {
+  type: "search" | "research";
+  label: string;
+  timeAgo: string;
+};</code></pre>
+
+  <p>Feature 16 will query <code>agent_runs</code>, transform each row into this shape (computing <code>timeAgo</code> from a timestamp, mapping run type to <code>"search"</code> or <code>"research"</code>), and pass the result as the <code>items</code> prop. The <code>RecentActivity</code> component file never opens.</p>
+
+  <h2>Transformation: the gap between raw data and the contract</h2>
+
+  <p>Raw data rarely matches the contract directly. There is always a transformation step between "what the data source produces" and "what the component accepts."</p>
+
+  <div class="diagram">Data source               Transformation              Component
+────────────────           ──────────────────         ──────────────────────
+agent_runs table           Query + map in             RecentActivity
+  {                          page.tsx                   receives:
+    id,                    ──────────────────►         [
+    run_type: "search",    { type: "search",             { type, label,
+    created_at,              label: "Found N             timeAgo }
+    jobs_found: 8,           jobs for X",              ]
+    query: "Frontend         timeAgo: "2h ago" }
+      Engineer",           }
+  }
+</code></div>
+
+  <p>The transformation lives in <code>page.tsx</code> — not in the component, and not in a separate "adapter" file. This keeps the component pure (it just renders) and makes the transformation visible in the same file that controls data flow.</p>
+
+  <h2>PostHog events: a different kind of data source</h2>
+
+  <p>Features 15 and 16 use database rows — the same data model that the rest of the app writes and reads. Feature 17 uses PostHog events, which are a different kind of data: an immutable, append-only log of things that happened.</p>
+
+  <p>When a user runs a job search, <code>job_found</code> events fire (one per job discovered). PostHog stores these events. Feature 17 will query PostHog to get: "how many <code>job_found</code> events fired on each day of the last 7 days?" That produces a time-series — a count per day — which maps directly to the chart's contract:</p>
+
+<pre><code>// PostHog query result (simplified)
+[
+  { date: "2024-01-08", count: 15 },
+  { date: "2024-01-09", count: 32 },
+  // ...
+]
+
+// Transformation (rename "date" to "day", format date)
+[
+  { day: "Mon", count: 15 },
+  { day: "Tue", count: 32 },
+  // ...
+]
+
+// Chart contract
+{ day: string; count: number }[]  ✓</code></pre>
+
+  <p>The contract was designed in Feature 14 with this transformation in mind. The mock array is the proof: it already has the transformed shape. Feature 17 doesn't need to redesign anything — it just needs to produce the same shape from real data.</p>
+
+  <div class="callout">
+    <p><strong>The general pattern:</strong> Design the output shape (the contract) first. Mock it. Then, when the real data source is ready, write a transformation that produces that shape. The component never changes; the contract is the stable anchor that both sides converge on.</p>
+  </div>
+
+  <h2>What this means for explaining a dashboard to someone</h2>
+
+  <p>When someone asks "where does this number come from?" the answer is always one of these layers:</p>
+
+  <ol style="max-width: 68ch; line-height: 2;">
+    <li>The <strong>database</strong> — rows in a table. "284 jobs found" is a <code>COUNT(*)</code> on the <code>jobs</code> table for this user.</li>
+    <li>The <strong>event log</strong> — things that happened. "Company Research Activity" is a count of <code>company_researched</code> PostHog events per day.</li>
+    <li>The <strong>application log</strong> — run records. "Recent Activity" is the last 5 rows from <code>agent_runs</code>, formatted as human-readable text.</li>
+  </ol>
+
+  <p>Each section of a dashboard maps to one of these sources. When you can identify the source for each section, you can describe the full data pipeline — from user action to chart — to anyone who needs to understand it.</p>
+
+  <div class="quiz">
+    <h3>Quiz — check your understanding</h3>
+
+    <div class="quiz-question">
+      <p>1. Feature 16 will wire real activity rows from the <code>agent_runs</code> table. The <code>agent_runs</code> table has a <code>created_at</code> timestamp column. The <code>ActivityItem</code> contract has a <code>timeAgo</code> string field. Where does the conversion from timestamp to "2 hours ago" happen?</p>
+      <ul class="quiz-options">
+        <li><button onclick="answer(this, false, 'q1')">Inside RecentActivity.tsx — it formats dates before rendering them.</button></li>
+        <li><button onclick="answer(this, false, 'q1')">In the database query — InsForge can compute time-ago strings in SQL.</button></li>
+        <li><button onclick="answer(this, true, 'q1')">In page.tsx — the transformation from raw DB rows to ActivityItem shape happens there, before the data is passed as a prop to RecentActivity.</button></li>
+        <li><button onclick="answer(this, false, 'q1')">In a separate utility file, imported by RecentActivity.</button></li>
+      </ul>
+      <div class="quiz-feedback" id="q1-feedback"></div>
+    </div>
+
+    <div class="quiz-question">
+      <p>2. The chart contract is <code>{ day: string; count: number }[]</code>. Feature 17's PostHog query will return dates as ISO strings like <code>"2024-01-08"</code>, not day names like <code>"Mon"</code>. Who is responsible for this transformation?</p>
+      <ul class="quiz-options">
+        <li><button onclick="answer(this, false, 'q2')">CompanyResearchChart.tsx — it should format dates before passing them to recharts.</button></li>
+        <li><button onclick="answer(this, true, 'q2')">page.tsx — it transforms the PostHog result into the contract shape (converting ISO dates to day names) before passing the array to the chart component as a prop.</button></li>
+        <li><button onclick="answer(this, false, 'q2')">PostHog — configure it to return data in the right format via query options.</button></li>
+        <li><button onclick="answer(this, false, 'q2')">recharts — it accepts ISO strings in the dataKey and formats them automatically.</button></li>
+      </ul>
+      <div class="quiz-feedback" id="q2-feedback"></div>
+    </div>
+
+    <div class="quiz-question">
+      <p>3. What is the practical difference between the data sources for Feature 15 (stat cards) and Feature 17 (charts)?</p>
+      <ul class="quiz-options">
+        <li><button onclick="answer(this, false, 'q3')">Feature 15 uses a third-party API and Feature 17 uses the application's own database.</button></li>
+        <li><button onclick="answer(this, false, 'q3')">Feature 15 returns a single number and Feature 17 returns an array, so they use different API clients.</button></li>
+        <li><button onclick="answer(this, true, 'q3')">Feature 15 queries the application's own database (structured rows the app writes). Feature 17 queries PostHog — a third-party event log of things that happened. Database = structured, writable. Event log = immutable, time-series, external.</button></li>
+        <li><button onclick="answer(this, false, 'q3')">There is no difference — both use InsForge database queries, just for different tables.</button></li>
+      </ul>
+      <div class="quiz-feedback" id="q3-feedback"></div>
+    </div>
+
+    <div class="quiz-question">
+      <p>4. A client asks you: "Where does the 'Recent Activity' list come from?" Which answer is most precise and most useful to them?</p>
+      <ul class="quiz-options">
+        <li><button onclick="answer(this, false, 'q4')">It comes from the React component called RecentActivity.</button></li>
+        <li><button onclick="answer(this, false, 'q4')">It's hardcoded for now but will be real data later.</button></li>
+        <li><button onclick="answer(this, false, 'q4')">It comes from the analytics platform we use.</button></li>
+        <li><button onclick="answer(this, true, 'q4')">It comes from an agent_runs table in the database — every time you run a job search or research a company, the app records that as a row. The dashboard shows the most recent 5 rows, formatted as human-readable text.</button></li>
+      </ul>
+      <div class="quiz-feedback" id="q4-feedback"></div>
+    </div>
+
+    <div class="quiz-score" id="quiz-score" style="display: none;"></div>
+  </div>
+
+  <h2>The full pipeline you just learned</h2>
+
+  <div class="diagram">User action                 Data stored              Dashboard section
+────────────────────        ──────────────────       ──────────────────────────
+
+User runs job search   →    agent_runs row       →   Recent Activity (F16)
+                       →    jobs rows (N)        →   Total Jobs Found stat (F15)
+                       →    job_found events     →   Jobs Found chart (F17)
+
+User researches        →    agent_runs row       →   Recent Activity (F16)
+  company              →    company_researched   →   Company Research chart (F17)
+                            PostHog event
+
+User saves profile     →    profiles row         →   Profile banner (F14)
+                            is_complete = true        disappears
+</div>
+
+  <p>Every row, every count, every chart bar has a provenance — a trail back to a specific user action stored in a specific place. When you can trace that trail, you can explain any number on the dashboard to anyone.</p>
+
+  <div class="callout mission">
+    <p><strong>For freelance, portfolio, and sales admin work:</strong> This trail-tracing skill is what separates someone who "built a dashboard" from someone who "designed a data pipeline." In client conversations, you can say: "The 'Jobs Found This Week' number counts rows in the jobs table where the user_id matches and the created_at date is within the last 7 days." That kind of specificity builds trust.</p>
+  </div>
+
+  <h2>Primary resource for this lesson</h2>
+
+  <a class="resource-link" href="https://www.getdbt.com/analytics-engineering/start" target="_blank" rel="noopener noreferrer">
+    dbt — The Analytics Engineering Guide →
+  </a>
+
+  <p style="font-size: 0.9rem; color: #555; font-family: sans-serif;">This guide describes the exact pipeline you just learned — events → warehouse → transformation → dashboard — at production scale. Even if you never use dbt, reading the "What is analytics engineering?" section will give you vocabulary for describing what Features 15–17 are building.</p>
+
+  <p style="font-size: 0.9rem; color: #555; font-family: sans-serif; margin-top: 1rem;">💬 Ask your agent: <em>"In the JobPilot dashboard, trace exactly what happens from the moment a user clicks 'Find Jobs' to when the Jobs Found chart updates in Feature 17. Include: the event that fires, where it's stored, how Feature 17 queries it, and how it becomes a bar in the recharts chart."</em></p>
+
+  <div class="exercises">
+    <h2>Exercises</h2>
+
+    <div class="exercise">
+      <div class="exercise-header">
+        <span class="exercise-num">Exercise 1</span>
+        <span class="exercise-type trace">Trace</span>
+      </div>
+      <p>Open <code>app/dashboard/page.tsx</code>. Find the line that passes data to <code>&lt;CompanyResearchChart data={...} /&gt;</code>. In your notes, answer three questions:</p>
+      <ul style="font-family: -apple-system, sans-serif; font-size: 0.9rem; line-height: 2; margin: 0.5rem 0 0.75rem; padding-left: 1.5rem;">
+        <li><strong>Now (Feature 14):</strong> where does the value come from?</li>
+        <li><strong>Feature 17:</strong> what will replace it — what data source, what transformation, and what shape does the chart receive?</li>
+        <li><strong>File count:</strong> how many files open for the Feature 17 swap?</li>
+      </ul>
+      <details class="exercise-hint">
+        <summary>Hint</summary>
+        <div class="hint-body">Now: <code>mockCompanyResearchData</code> — a constant at module level in <code>page.tsx</code>. Feature 17: a PostHog event query for <code>company_researched</code> events, bucketed by day, transformed to <code>&#123; day: string; count: number &#125;[]</code>. Files that open: only <code>page.tsx</code>. The chart component file stays closed — the contract was already designed.</div>
+      </details>
+    </div>
+
+    <div class="exercise">
+      <div class="exercise-header">
+        <span class="exercise-num">Exercise 2</span>
+        <span class="exercise-type modify">Modify</span>
+      </div>
+      <p>In <code>app/dashboard/page.tsx</code>, add a 5th entry to <code>mockStats</code>:</p>
+      <pre><code>{ label: "Open Applications", value: "7", subtitle: "Active this week" }</code></pre>
+      <p>Save and reload the dashboard. Does a 5th stat card appear? Does TypeScript accept the new entry? Then answer: when a future feature tracks real applications, which table would it query, and which single token in <code>page.tsx</code> would change from the hardcoded <code>"7"</code>?</p>
+      <details class="exercise-hint">
+        <summary>Hint</summary>
+        <div class="hint-body">A 5th card renders — <code>StatsBar</code> maps over whatever array length it receives. TypeScript accepts the entry because <code>StatCardConfig</code> allows <code>subtitle</code> as an optional field. The future change: replace <code>value: "7"</code> with <code>value: String(count)</code> where <code>count</code> comes from a <code>SELECT COUNT(*)</code> on an <code>applications</code> table. One value; the component never opens.</div>
+      </details>
+    </div>
+  </div>
+
+  <div class="lesson-nav">
+    <a href="0003-css-tokens-in-svg.html">← Lesson 3: CSS tokens inside charts</a>
+    <span style="color: #555; font-style: italic;">Course complete ✓</span>
+  </div>
+
+</div>
+
+<script>
+  const answers = {};
+  let score = 0;
+  let answered = 0;
+  const total = 4;
+
+  const feedbacks = {
+    q1: {
+      correct: 'Exactly right. The component just renders what it receives. Transformation — including date formatting — happens in page.tsx before the prop is passed.',
+      wrong: 'The component\'s job is rendering, not data transformation. page.tsx transforms raw DB rows into the ActivityItem contract (including computing timeAgo) before passing them down as props.'
+    },
+    q2: {
+      correct: 'Right. page.tsx is the transformation layer. It receives raw PostHog data, converts ISO dates to day names, and passes the result as the chart\'s data prop. The chart component never touches PostHog.',
+      wrong: 'Transformation belongs in page.tsx, not in the component (which should stay pure) and not in recharts (which just renders). The component contract is the fixed point; page.tsx adapts the data to meet it.'
+    },
+    q3: {
+      correct: 'Exactly. Database rows are written by your application and are queryable in structured ways. PostHog events are an append-only external log — you query them with the PostHog API, get back time-series aggregations, and transform them into chart data.',
+      wrong: 'The distinction is ownership and structure. Database = application-owned, structured, writable. Event log = third-party, append-only, time-series. The query pattern is completely different.'
+    },
+    q4: {
+      correct: 'This is the most useful answer — it traces the data to its source and explains the transformation. A client who hears this understands exactly what they\'re looking at and can trust the number.',
+      wrong: 'The most useful explanation traces the data to its source: which table, which action writes to it, and how the dashboard reads from it. Generic answers ("it comes from the component" or "it\'s hardcoded") don\'t help the client understand or trust the data.'
+    }
+  };
+
+  function answer(button, isCorrect, questionId) {
+    if (answers[questionId]) return;
+    answers[questionId] = true;
+    answered++;
+    if (isCorrect) score++;
+
+    button.closest('.quiz-options').querySelectorAll('button').forEach(b => b.disabled = true);
+    button.classList.add(isCorrect ? 'correct' : 'wrong');
+
+    const fb = document.getElementById(questionId + '-feedback');
+    fb.textContent = (isCorrect ? '✓ ' : '✗ ') + feedbacks[questionId][isCorrect ? 'correct' : 'wrong'];
+    fb.className = 'quiz-feedback show ' + (isCorrect ? 'correct' : 'wrong');
+
+    if (answered === total) {
+      const el = document.getElementById('quiz-score');
+      el.style.display = 'block';
+      el.textContent = `Score: ${score}/${total}. ${score === total ? '✓ Course complete. You can now trace any number on the dashboard back to its source.' : 'Review the pipeline diagram above, then re-read the explanation.md for Feature 14 before the next session.'}`;
+    }
+  }
+</script>
+
+</body>
+</html>

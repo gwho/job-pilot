@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lesson 3 — CSS tokens inside charts</title>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<div class="page">
+
+  <div class="progress">
+    <span class="progress-dot done"></span>
+    <span class="progress-dot done"></span>
+    <span class="progress-dot active"></span>
+    <span class="progress-dot"></span>
+    <span style="margin-left: 0.5rem;">Lesson 3 of 4</span>
+  </div>
+
+  <h1>CSS tokens inside charts</h1>
+  <p class="subtitle">How <code>var(--color-accent)</code> reaches inside SVG — and why it matters for design systems</p>
+
+  <div class="lesson-meta">
+    <span>⏱ ~20 min</span>
+    <span>📘 Tutorial 27, Parts 4 &amp; 5</span>
+    <span>🎯 CompanyResearchChart, JobsFoundChart, MatchScoreChart</span>
+  </div>
+
+  <div class="callout mission">
+    <p><strong>Why this lesson matters for your mission:</strong> Every dashboard you will ever build has charts. Charts are SVG. SVG uses its own color system. Understanding how design tokens reach inside SVG means you can build charts that automatically update when the design system changes — and explain to a client why their "brand color update" doesn't require manually editing 20 chart components.</p>
+  </div>
+
+  <h2>The problem: charts don't use CSS classes</h2>
+
+  <p>In HTML, you style elements with CSS classes: <code>&lt;div class="bg-accent"&gt;</code>. The Tailwind class compiles to a CSS rule that sets <code>background-color: var(--color-accent)</code>. The token system works through the cascade.</p>
+
+  <p>Charts are different. Recharts renders SVG, and SVG uses <em>attributes</em> for colors — not CSS classes:</p>
+
+<pre><code>&lt;!-- HTML element — styled with a class --&gt;
+&lt;div class="bg-accent"&gt;&lt;/div&gt;
+
+&lt;!-- SVG element — styled with an attribute --&gt;
+&lt;rect fill="#9B5CF6"&gt;&lt;/rect&gt;</code></pre>
+
+  <p>You can't write <code>&lt;Bar class="bg-accent"&gt;</code>. Recharts doesn't accept class names as color props. It accepts SVG attribute strings: <code>fill="..."</code>, <code>stroke="..."</code>.</p>
+
+  <p>So how do you keep charts inside the design token system?</p>
+
+  <h2>The answer: CSS custom properties resolve in SVG attribute values</h2>
+
+  <p>Modern browsers resolve CSS custom properties (CSS variables) in SVG presentation attribute values. This is the key fact.</p>
+
+  <p>When a browser encounters:</p>
+
+<pre><code>&lt;rect fill="var(--color-accent)"&gt;&lt;/rect&gt;</code></pre>
+
+  <p>It looks up <code>--color-accent</code> in the CSS cascade for that element and substitutes the resolved value at paint time. The visual result is identical to <code>fill="#9B5CF6"</code> — but the token is in control, not the hex value.</p>
+
+  <p>This is exactly what all three chart components in the dashboard use. Open <code>components/dashboard/CompanyResearchChart.tsx</code>:</p>
+
+<pre><code>&lt;CartesianGrid
+  strokeDasharray="3 3"
+  stroke="var(--color-border)"
+  vertical={false}
+/&gt;
+&lt;XAxis
+  dataKey="day"
+  tick={{ fill: "var(--color-chart-axis)", fontSize: 12 }}
+  axisLine={false}
+  tickLine={false}
+/&gt;
+&lt;Bar
+  dataKey="count"
+  fill="var(--color-info)"
+  radius={[4, 4, 0, 0]}
+/&gt;</code></pre>
+
+  <p>Every color is a CSS variable string. Not a single hex value. If <code>--color-info</code> changes in <code>app/globals.css</code>, the blue bars update automatically — no component file touched.</p>
+
+  <div class="diagram">app/globals.css                     DOM (after render)
+──────────────────────              ──────────────────────────────────
+:root {
+  --color-info: #61A8FF;            &lt;rect fill="var(--color-info)"&gt;
+  --color-accent: #9B5CF6;               │
+  --color-border: #E5E7EB;               ▼ browser resolves at paint time
+  --color-chart-axis: #9ca3af;      fills with #61A8FF
+}
+</div>
+
+  <h2>A new token had to be added</h2>
+
+  <p>Chart axis labels use a specific gray color: <code>#9CA3AF</code>. Before Feature 14, this color had no CSS variable in the project's <code>@theme</code> block. The only option would have been to hardcode the hex in all three chart components — three violations of the "no hardcoded colors" rule.</p>
+
+  <p>The solution: add one line to <code>app/globals.css</code>:</p>
+
+<pre><code>/* Charts */
+--color-chart-axis: #9ca3af;</code></pre>
+
+  <p>Now all three chart files can use <code>var(--color-chart-axis)</code>. One source of truth. If the axis color needs to change for dark mode or accessibility, it changes in one place.</p>
+
+  <p>This is the recurring pattern in the design system: whenever you find yourself about to write the same raw value in two places, that value needs a name.</p>
+
+  <h2>The gradient: SVG defs and paint servers</h2>
+
+  <p>The <code>JobsFoundChart</code> has a more advanced color: an area fill that fades from semi-transparent accent at the top to fully transparent at the bottom. Solid colors can't do this. It requires a gradient.</p>
+
+  <p>Open <code>components/dashboard/JobsFoundChart.tsx</code> and look at the <code>&lt;defs&gt;</code> block:</p>
+
+<pre><code>&lt;AreaChart data={data}&gt;
+  &lt;defs&gt;
+    &lt;linearGradient id="jobsGradient" x1="0" y1="0" x2="0" y2="1"&gt;
+      &lt;stop
+        offset="5%"
+        stopColor="var(--color-accent)"
+        stopOpacity={0.2}
+      /&gt;
+      &lt;stop
+        offset="95%"
+        stopColor="var(--color-accent)"
+        stopOpacity={0}
+      /&gt;
+    &lt;/linearGradient&gt;
+  &lt;/defs&gt;
+  &lt;Area
+    fill="url(#jobsGradient)"
+    stroke="var(--color-accent)"
+    strokeWidth={3}
+    dot={false}
+  /&gt;
+&lt;/AreaChart&gt;</code></pre>
+
+  <p>Breaking this down:</p>
+
+  <ul style="max-width: 68ch; line-height: 2;">
+    <li><strong><code>&lt;defs&gt;</code></strong> — an SVG section for reusable definitions. Elements inside don't render directly; they're referenced by others.</li>
+    <li><strong><code>&lt;linearGradient id="jobsGradient"&gt;</code></strong> — defines a gradient named "jobsGradient". The <code>x1/y1/x2/y2</code> vector runs top-to-bottom (<code>y</code> goes 0 → 1).</li>
+    <li><strong><code>stopColor="var(--color-accent)"</code></strong> — the gradient uses the design token, not a hex value. Same CSS variable resolution as before.</li>
+    <li><strong><code>fill="url(#jobsGradient)"</code></strong> — the area references the gradient by id. <code>url(#id)</code> is SVG's way of saying "use this definition as the paint source."</li>
+    <li><strong><code>stroke="var(--color-accent)"</code></strong> — the line itself is a solid accent color. Gradient only applies to the fill area.</li>
+  </ul>
+
+  <div class="callout warn">
+    <p><strong>Important constraint:</strong> The gradient <code>id="jobsGradient"</code> must be unique within the SVG document. Currently the dashboard has one area chart, so there's no collision. If a second area chart were added with the same <code>id</code>, both would share the last gradient definition — a silent visual bug with no error message.</p>
+  </div>
+
+  <h2>Quick check — before the quiz</h2>
+
+  <ul style="max-width: 68ch; line-height: 2;">
+    <li>Why can't you use a Tailwind class like <code>fill-info</code> as a recharts prop?</li>
+    <li>What happens in the browser when it encounters <code>fill="var(--color-info)"</code>?</li>
+    <li>If <code>--color-accent</code> changes in <code>globals.css</code>, how many chart files need to be updated?</li>
+    <li>What is <code>&lt;defs&gt;</code> and why does the gradient need to be inside it?</li>
+  </ul>
+
+  <div class="quiz">
+    <h3>Quiz — check your understanding</h3>
+
+    <div class="quiz-question">
+      <p>1. You want to change the company research bars from blue to teal. Currently the bars use <code>fill="var(--color-info)"</code>. Where do you make the change — and how many files need to be touched?</p>
+      <ul class="quiz-options">
+        <li><button onclick="answer(this, false, 'q1')">CompanyResearchChart.tsx — change the fill prop from var(--color-info) to var(--color-teal).</button></li>
+        <li><button onclick="answer(this, false, 'q1')">All three chart files — they all use --color-info for bar colors.</button></li>
+        <li><button onclick="answer(this, true, 'q1')">app/globals.css — change --color-info to the teal hex value. One file, all uses update automatically. Or add a new --color-teal token and update the component to reference it — still one component file.</button></li>
+        <li><button onclick="answer(this, false, 'q1')">app/globals.css and tailwind.config.ts — both need the new color.</button></li>
+      </ul>
+      <div class="quiz-feedback" id="q1-feedback"></div>
+    </div>
+
+    <div class="quiz-question">
+      <p>2. The axis labels use <code>tick={{ fill: "var(--color-chart-axis)", fontSize: 12 }}</code>. Why was a new token <code>--color-chart-axis</code> added instead of using an existing Tailwind color like <code>gray-400</code>?</p>
+      <ul class="quiz-options">
+        <li><button onclick="answer(this, false, 'q2')">Because recharts doesn't support Tailwind class names in tick props.</button></li>
+        <li><button onclick="answer(this, true, 'q2')">Two reasons: (1) Tailwind class names can't be used in recharts SVG props — only attribute strings work. (2) Hardcoding the gray-400 hex value (#9CA3AF) directly would violate the no-hardcoded-colors rule. A token is the design-system-compliant path.</button></li>
+        <li><button onclick="answer(this, false, 'q2')">Because --color-chart-axis is a more descriptive name that explains its purpose.</button></li>
+        <li><button onclick="answer(this, false, 'q2')">Because gray-400 doesn't exist in this project's theme.</button></li>
+      </ul>
+      <div class="quiz-feedback" id="q2-feedback"></div>
+    </div>
+
+    <div class="quiz-question">
+      <p>3. In <code>JobsFoundChart</code>, the gradient uses <code>id="jobsGradient"</code>. You add a second area chart to the page with the same <code>id</code>. What happens — a build error, a runtime error, or something else?</p>
+      <ul class="quiz-options">
+        <li><button onclick="answer(this, false, 'q3')">A build error — Next.js detects duplicate SVG ids during compilation.</button></li>
+        <li><button onclick="answer(this, false, 'q3')">A runtime JavaScript error — recharts throws when it finds a duplicate id.</button></li>
+        <li><button onclick="answer(this, true, 'q3')">A silent visual bug. SVG id collisions don't throw errors. The browser uses whichever gradient definition appears last in the DOM — both charts end up sharing that definition, which may have different colors or direction than intended.</button></li>
+        <li><button onclick="answer(this, false, 'q3')">Nothing — browsers handle duplicate SVG ids by using the first one found.</button></li>
+      </ul>
+      <div class="quiz-feedback" id="q3-feedback"></div>
+    </div>
+
+    <div class="quiz-question">
+      <p>4. The JobsFoundChart area line uses <code>dot={false}</code>. If you removed this prop, what would appear on the chart?</p>
+      <ul class="quiz-options">
+        <li><button onclick="answer(this, false, 'q4')">Nothing visible changes — dot is not a visual prop.</button></li>
+        <li><button onclick="answer(this, false, 'q4')">The area fill disappears and only the line remains.</button></li>
+        <li><button onclick="answer(this, true, 'q4')">A colored circle appears at each of the 7 data points (Mon–Sun) on the line, using the stroke color (var(--color-accent)). Recharts renders dots at data points by default.</button></li>
+        <li><button onclick="answer(this, false, 'q4')">The gradient disappears and the area fills with a solid color.</button></li>
+      </ul>
+      <div class="quiz-feedback" id="q4-feedback"></div>
+    </div>
+
+    <div class="quiz-score" id="quiz-score" style="display: none;"></div>
+  </div>
+
+  <h2>Try it in DevTools</h2>
+
+  <p>Run <code>npm run dev</code> and navigate to <code>/dashboard</code>. Open DevTools (⌘+Option+I on Mac) and click on one of the blue bars in the Company Research chart.</p>
+
+  <p>In the Elements panel, find the selected <code>&lt;rect&gt;</code> element. Look at its <code>fill</code> attribute. You'll see <code>fill="var(--color-info)"</code> — the CSS variable string, not a resolved hex value. The browser holds the variable reference in the attribute; it resolves the actual color at paint time.</p>
+
+  <p>Now go to the Computed tab (still in DevTools). Search for <code>fill</code>. You'll see the computed fill value — the actual hex color the browser resolved. This is the color that gets painted on screen.</p>
+
+  <h2>Primary resource for this lesson</h2>
+
+  <a class="resource-link" href="https://developer.mozilla.org/en-US/docs/Web/CSS/Using_CSS_custom_properties" target="_blank" rel="noopener noreferrer">
+    MDN — Using CSS custom properties →
+  </a>
+
+  <p style="font-size: 0.9rem; color: #555; font-family: sans-serif;">Read the section "Values in JavaScript." It shows how JavaScript (and by extension, SVG attribute values) can read and write CSS custom properties — the same mechanism recharts relies on.</p>
+
+  <p style="font-size: 0.9rem; color: #555; font-family: sans-serif; margin-top: 1rem;">💬 Ask your agent: <em>"In JobsFoundChart.tsx, the linearGradient uses x1='0' y1='0' x2='0' y2='1'. What would happen visually if I changed it to x1='0' y1='0' x2='1' y2='0'? Draw the direction change for me."</em></p>
+
+  <div class="exercises">
+    <h2>Exercises</h2>
+
+    <div class="exercise">
+      <div class="exercise-header">
+        <span class="exercise-num">Exercise 1</span>
+        <span class="exercise-type modify">Modify</span>
+      </div>
+      <p>In <code>app/globals.css</code>, temporarily change <code>--color-chart-axis</code> from <code>#9ca3af</code> to <code>red</code>. Save and reload the dashboard.</p>
+      <p>In your notes: which elements in the three charts turn red? How many component files would you need to open and edit to achieve the same effect without the token?</p>
+      <p>Undo the change before continuing.</p>
+      <details class="exercise-hint">
+        <summary>Hint</summary>
+        <div class="hint-body">The axis tick labels in all three charts use <code>var(--color-chart-axis)</code> for their SVG <code>fill</code> attribute. Without the token, you'd open all three component files (at least 6 lines across 3 files). With the token: one line in <code>globals.css</code>. The token is the multiplier.</div>
+      </details>
+    </div>
+
+    <div class="exercise">
+      <div class="exercise-header">
+        <span class="exercise-num">Exercise 2</span>
+        <span class="exercise-type trace">Trace</span>
+      </div>
+      <p>Open <code>components/dashboard/JobsFoundChart.tsx</code> and find the <code>&lt;defs&gt;</code> block with <code>&lt;linearGradient id="jobsGradient"&gt;</code>. Now open <code>CompanyResearchChart.tsx</code> and <code>MatchScoreChart.tsx</code>. Do either bar chart have a <code>&lt;defs&gt;</code> block?</p>
+      <p>In your notes: explain in one sentence why <code>JobsFoundChart</code> needs <code>&lt;defs&gt;</code> but the bar charts don't. Then explain what would break if a second area chart used the same <code>id="jobsGradient"</code>.</p>
+      <details class="exercise-hint">
+        <summary>Hint</summary>
+        <div class="hint-body">Bar charts use a solid <code>fill</code> color — no gradient needed. The area chart fades from opaque at the top to transparent at the bottom, which requires a <code>&lt;linearGradient&gt;</code> paint server. Two gradient elements with the same <code>id</code> conflict silently: the DOM keeps one id per document, so whichever appears later in the HTML wins, and the other chart renders the wrong gradient.</div>
+      </details>
+    </div>
+  </div>
+
+  <div class="lesson-nav">
+    <a href="0002-mock-data-seam.html">← Lesson 2: The mock data seam</a>
+    <a href="0004-phase-boundaries.html">Next: Lesson 4 — Phase boundaries and data contracts →</a>
+  </div>
+
+</div>
+
+<script>
+  const answers = {};
+  let score = 0;
+  let answered = 0;
+  const total = 4;
+
+  const feedbacks = {
+    q1: {
+      correct: 'Exactly. The token is the lever. Change it once, and everything that references it updates — including chart bars, HTML elements using bg-info, and any future component added to the project.',
+      wrong: 'If you change the component\'s fill prop to reference a different token, only that component changes. But if you update the token value in globals.css, all uses of that token update at once — one change, total coverage.'
+    },
+    q2: {
+      correct: 'Right on both counts. SVG props only accept attribute strings, not Tailwind class names. And hardcoding the hex value would bypass the design system. The token is the only compliant path.',
+      wrong: 'The key issue is that recharts SVG props don\'t accept class names — only string values like hex or CSS variable references. And the project\'s rule is no hardcoded colors anywhere. A CSS token is the only way to satisfy both constraints.'
+    },
+    q3: {
+      correct: 'Exactly. Duplicate SVG ids are a classic silent bug. No error, no warning — just the wrong gradient applied to one or both charts. The fix is to give each chart a unique gradient id.',
+      wrong: 'SVG id collisions are silent. The browser doesn\'t throw — it just uses whichever definition appears last in the DOM, which may not be what either chart intended. Always use unique ids for SVG defs.'
+    },
+    q4: {
+      correct: 'Correct. Recharts renders a dot (circle) at each data point by default. dot={false} suppresses them. For a 7-day weekly summary chart, dots on every bar date make the line look cluttered.',
+      wrong: 'Recharts renders per-point dots by default unless you explicitly set dot={false}. The dots use the area\'s stroke color and appear on the line at each data point.'
+    }
+  };
+
+  function answer(button, isCorrect, questionId) {
+    if (answers[questionId]) return;
+    answers[questionId] = true;
+    answered++;
+    if (isCorrect) score++;
+
+    button.closest('.quiz-options').querySelectorAll('button').forEach(b => b.disabled = true);
+    button.classList.add(isCorrect ? 'correct' : 'wrong');
+
+    const fb = document.getElementById(questionId + '-feedback');
+    fb.textContent = (isCorrect ? '✓ ' : '✗ ') + feedbacks[questionId][isCorrect ? 'correct' : 'wrong'];
+    fb.className = 'quiz-feedback show ' + (isCorrect ? 'correct' : 'wrong');
+
+    if (answered === total) {
+      const el = document.getElementById('quiz-score');
+      el.style.display = 'block';
+      el.textContent = `Score: ${score}/${total}. ${score === total ? '✓ Perfect — one more lesson to go.' : 'Review the explanations, then open CompanyResearchChart.tsx and JobsFoundChart.tsx side by side before continuing.'}`;
+    }
+  }
+</script>
+
+</body>
+</html>
