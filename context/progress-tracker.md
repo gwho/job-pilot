@@ -7,8 +7,8 @@ Update this file after every completed feature. Any AI agent reading this should
 ## Current Status
 
 **Phase:** Phase 5 — Dashboard
-**Last completed:** 15 Stats Bar — Real Data
-**Next:** 16 Recent Activity — Real Data
+**Last completed:** 16 Recent Activity — Real Data
+**Next:** 17 Analytics Charts — PostHog Data
 
 ---
 
@@ -44,7 +44,7 @@ Update this file after every completed feature. Any AI agent reading this should
 
 - [x] 14 Dashboard Page — Full UI
 - [x] 15 Stats Bar — Real Data
-- [ ] 16 Recent Activity — Real Data
+- [x] 16 Recent Activity — Real Data
 - [ ] 17 Analytics Charts — PostHog Data
 
 ---
@@ -67,6 +67,7 @@ Update this file after every completed feature. Any AI agent reading this should
 - **Find Jobs current-search fix**: `/api/agent/find` now returns display rows for every job found in the latest JobsDB actor run, including rows that were already saved and therefore skipped for insertion. DB dedupe still only inserts new `source_url`s, but the response no longer returns `jobs: []` for an all-duplicate repeat search. `FindJobsClient` now treats pre-search `initialJobs` as saved history, then replaces the table with the latest search response after the user clicks Find Jobs. `SearchControls` renders the API `successMessage` verbatim. Regression coverage in `__tests__/find-jobs/seam.test.tsx` catches stale rows and wrong banner copy. Docs in `docs/plan/find-jobs-current-search-results/`.
 - **JobsDB typed-query relevance fix**: The deployed actor was navigating to `https://hk.jobsdb.com/jobs?q=sales+coordinator&l=Hong+Kong`, which live runs proved returned generic listings unrelated to the typed query. Search URL construction was moved to `apify/jobsdb-hk-actor/src/urls.ts` and now uses JobsDB's SEO path, e.g. `https://hk.jobsdb.com/sales-coordinator-jobs/in-Hong-Kong`. Regression coverage in `__tests__/find-jobs/jobsdb-urls.test.ts`; actor deployed to Apify build `0.1.7`; live verification for `sales coordinator` returned 9/10 relevant rows.
 - **15 Stats Bar — Real Data**: Four InsForge SDK queries in `Promise.all` replace the `mockStats` constant in `page.tsx`. Three use `{ count: 'exact', head: true }` (total jobs, companies researched, jobs this week). One fetches `match_score` for JS-side average computation, excluding null rows via `.not("match_score", "is", null)`. `StatCardConfig` type simplified: `trend` field removed, `subtitle` promoted to required. `TrendingUp` import and trend rendering branch removed from `StatCard`. Avg. Match Rate shows `"—"` when no scored rows exist; `count ?? 0` used for all count fallbacks. Each query error is logged independently with `[dashboard/stats]` prefix — failures degrade to zero, never crash the page. Architect session in `docs/architect/15-stats-bar-real-data/`. Full docs in `docs/plan/15-stats-bar-real-data/`. Tutorial 28 in `docs/tutorials/28-stats-bar-real-data/`.
+- **16 Recent Activity — Real Data**: Two InsForge SDK queries added to the existing `Promise.all` in `page.tsx`: `agent_runs` (status = 'completed', limit 20) and `jobs` (company_research IS NOT NULL, limit 20). Both normalized into `ActivityItem[]` in `page.tsx`. Research timestamp extracted from `company_research.researchedAt` JSONB field (saved by `agent/research.ts`) — `found_at` is only used as DB pre-sort for candidate selection. Merged, sorted by source-specific timestamp descending, trimmed to 10. `ActivityItem` type gains `id: string` (source-qualified: `search-${run.id}`, `research-${job.id}`); `key={item.id}` replaces `key={index}`. Empty state added to `RecentActivity` when `items.length === 0`. Query failures degrade to `[]` with `[dashboard/activity]` log prefix. Plan in `docs/plan/16-recent-activity-real-data/`.
 
 ---
 

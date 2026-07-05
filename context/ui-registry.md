@@ -605,7 +605,7 @@ Last updated: 2026-07-04 (Feature 15 — simplified to subtitle-only, trend remo
 ### RecentActivity + ActivityRow
 
 File: `components/dashboard/RecentActivity.tsx`
-Last updated: 2026-07-03 (Feature 14)
+Last updated: 2026-07-05 (Feature 16 — wired to real data)
 
 | Property         | Class / Value |
 | ---------------- | ------------- |
@@ -623,11 +623,13 @@ Last updated: 2026-07-03 (Feature 14)
 | Dot — inner (search)   | `w-2 h-2 rounded-full bg-success-alt` |
 | Dot — outer (research) | `w-4 h-4 rounded-full bg-info-light`, with `outline: 1px solid white` inline |
 | Dot — inner (research) | `w-2 h-2 rounded-full bg-info` |
+| Empty state text | `text-sm text-text-muted py-3` |
+| Empty state link | `text-accent hover:underline` |
 | Hover state      | none |
 | Shadow           | `shadow-sm` |
 
 **Pattern notes:**
-`ActivityRow` is a module-level unexported sub-component. `ActivityItem` type is exported because `page.tsx` needs it to type the mock array. Two dot types only — `search` (green) and `research` (blue). The white separator ring between outer and inner dot uses an inline `style={{ outline: '1px solid white' }}` on the outer div — there is no Tailwind class for outline color on a rounded div without breaking the ring appearance. `divide-y divide-border` on the item wrapper naturally separates rows without explicit border classes on each `ActivityRow`. Feature 16 replaces the mock `items` array passed from `page.tsx`.
+`ActivityRow` is a module-level unexported sub-component. `ActivityItem` type is exported — `page.tsx` builds the real array from two InsForge queries and passes it as `items`. `ActivityItem` shape: `{ id: string; type: "search" | "research"; label: string; timeAgo: string }`. `id` is source-qualified: `search-${run.id}` for search events, `research-${job.id}` for research events. Rendering uses `key={item.id}` — not `key={index}`. Two dot types only — `search` (green) and `research` (blue). The white separator ring between outer and inner dot uses an inline `style={{ outline: '1px solid white' }}` — no Tailwind class exists for outline color on a rounded div without breaking the ring. `divide-y divide-border` separates rows without per-row border classes. Empty state renders when `items.length === 0`: plain muted text with "No activity yet." followed by a `<Link href="/find-jobs">Run a search</Link>` in `text-accent hover:underline`. Data sources: `agent_runs` (completed searches) and `jobs` (company_research IS NOT NULL); merged, sorted by recency, trimmed to 10 in `page.tsx`.
 
 ---
 

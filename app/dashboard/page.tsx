@@ -8,36 +8,8 @@ import { CompanyResearchChart } from "@/components/dashboard/CompanyResearchChar
 import { JobsFoundChart } from "@/components/dashboard/JobsFoundChart";
 import { MatchScoreChart } from "@/components/dashboard/MatchScoreChart";
 import { createInsforgeServer } from "@/lib/insforge-server";
-import { getIsoTimestampDaysAgo } from "@/lib/utils";
+import { getIsoTimestampDaysAgo, formatRelativeDate } from "@/lib/utils";
 
-
-const mockActivity: ActivityItem[] = [
-  {
-    type: "search",
-    label: "Found 8 jobs for Frontend Engineer",
-    timeAgo: "10 mins ago",
-  },
-  {
-    type: "research",
-    label: "Researched Stripe",
-    timeAgo: "1 hour ago",
-  },
-  {
-    type: "search",
-    label: "Found 12 jobs for React Developer",
-    timeAgo: "2 hours ago",
-  },
-  {
-    type: "research",
-    label: "Researched Vercel",
-    timeAgo: "Yesterday",
-  },
-  {
-    type: "search",
-    label: "Found 10 jobs for Full Stack Engineer",
-    timeAgo: "Yesterday",
-  },
-];
 
 const mockCompanyResearchData = [
   { day: "Mon", count: 2 },
@@ -85,31 +57,53 @@ export default async function DashboardPage() {
 
   const sevenDaysAgo = getIsoTimestampDaysAgo(7);
 
-  const [totalJobsResult, scoredJobsResult, companiesResult, thisWeekResult] =
-    await Promise.all([
-      insforge.database
-        .from("jobs")
-        .select("*", { count: "exact", head: true })
-        .eq("user_id", authData.user.id),
+  const [
+    totalJobsResult,
+    scoredJobsResult,
+    companiesResult,
+    thisWeekResult,
+    agentRunsResult,
+    researchJobsResult,
+  ] = await Promise.all([
+    insforge.database
+      .from("jobs")
+      .select("*", { count: "exact", head: true })
+      .eq("user_id", authData.user.id),
 
-      insforge.database
-        .from("jobs")
-        .select("match_score")
-        .eq("user_id", authData.user.id)
-        .not("match_score", "is", null),
+    insforge.database
+      .from("jobs")
+      .select("match_score")
+      .eq("user_id", authData.user.id)
+      .not("match_score", "is", null),
 
-      insforge.database
-        .from("jobs")
-        .select("*", { count: "exact", head: true })
-        .eq("user_id", authData.user.id)
-        .not("company_research", "is", null),
+    insforge.database
+      .from("jobs")
+      .select("*", { count: "exact", head: true })
+      .eq("user_id", authData.user.id)
+      .not("company_research", "is", null),
 
-      insforge.database
-        .from("jobs")
-        .select("*", { count: "exact", head: true })
-        .eq("user_id", authData.user.id)
-        .gte("found_at", sevenDaysAgo),
-    ]);
+    insforge.database
+      .from("jobs")
+      .select("*", { count: "exact", head: true })
+      .eq("user_id", authData.user.id)
+      .gte("found_at", sevenDaysAgo),
+
+    insforge.database
+      .from("agent_runs")
+      .select("id, job_title_searched, jobs_found, completed_at")
+      .eq("user_id", authData.user.id)
+      .eq("status", "completed")
+      .order("completed_at", { ascending: false })
+      .limit(20),
+
+    insforge.database
+      .from("jobs")
+      .select("id, company, company_research")
+      .eq("user_id", authData.user.id)
+      .not("company_research", "is", null)
+      .order("found_at", { ascending: false })
+      .limit(20),
+  ]);
 
   if (totalJobsResult.error)
     console.error("[dashboard/stats] total jobs", totalJobsResult.error);
@@ -119,6 +113,10 @@ export default async function DashboardPage() {
     console.error("[dashboard/stats] companies researched", companiesResult.error);
   if (thisWeekResult.error)
     console.error("[dashboard/stats] jobs this week", thisWeekResult.error);
+  if (agentRunsResult.error)
+    console.error("[dashboard/activity] agent_runs", agentRunsResult.error);
+  if (researchJobsResult.error)
+    console.error("[dashboard/activity] jobs", researchJobsResult.error);
 
   const totalJobs = totalJobsResult.count ?? 0;
   const companiesResearched = companiesResult.count ?? 0;
@@ -140,6 +138,41 @@ export default async function DashboardPage() {
     { label: "Jobs This Week",       value: String(jobsThisWeek),        subtitle: "Last 7 days" },
   ];
 
+  type ActivityCandidate = ActivityItem & { sortTs: number };
+
+  const searchCandidates: ActivityCandidate[] = (agentRunsResult.data ?? [])
+    .filter((r) => !!r.completed_at)
+    .map((r) => ({
+      id: `search-${r.id}`,
+      type: "search" as const,
+      label: `Found ${r.jobs_found ?? 0} jobs for ${r.job_title_searched ?? "your search"}`,
+      timeAgo: formatRelativeDate(r.completed_at as string),
+      sortTs: new Date(r.completed_at as string).getTime(),
+    }));
+
+  const researchCandidates: ActivityCandidate[] = (researchJobsResult.data ?? [])
+    .flatMap((row) => {
+      const researchedAt = (row.company_research as { researchedAt?: string } | null)
+        ?.researchedAt;
+      if (!researchedAt) return [];
+      const ts = new Date(researchedAt).getTime();
+      if (isNaN(ts)) return [];
+      return [
+        {
+          id: `research-${row.id}`,
+          type: "research" as const,
+          label: `Researched ${row.company ?? "company"}`,
+          timeAgo: formatRelativeDate(researchedAt),
+          sortTs: ts,
+        },
+      ];
+    });
+
+  const activityItems: ActivityItem[] = [...searchCandidates, ...researchCandidates]
+    .sort((a, b) => b.sortTs - a.sortTs)
+    .slice(0, 10)
+    .map(({ id, type, label, timeAgo }) => ({ id, type, label, timeAgo }));
+
   return (
     <>
       <Navbar />
@@ -148,7 +181,7 @@ export default async function DashboardPage() {
           <ProfileBanner isComplete={isComplete} />
           <StatsBar stats={stats} />
           <div className="grid grid-cols-2 gap-6 items-start">
-            <RecentActivity items={mockActivity} />
+            <RecentActivity items={activityItems} />
             <CompanyResearchChart data={mockCompanyResearchData} />
           </div>
           <div className="grid grid-cols-2 gap-6 items-start">
