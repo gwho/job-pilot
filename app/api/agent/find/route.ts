@@ -257,25 +257,20 @@ export async function POST(request: NextRequest) {
       .map((job) => insertedByUrl.get(job.sourceUrl) ?? existingByUrl.get(job.sourceUrl))
       .filter((job): job is Job => Boolean(job));
 
-    const strongMatches = insertedJobs.filter(
-      (j) => (j.match_score ?? 0) >= MATCH_THRESHOLD,
-    ).length;
-
-    // One job_found event per strong match.
+    let strongMatches = 0;
     for (const job of insertedJobs) {
-      if ((job.match_score ?? 0) >= MATCH_THRESHOLD) {
-        await captureServerEvent({
-          distinctId: userId,
-          event: "job_found",
-          properties: {
-            userId,
-            source: "search",
-            sourceProvider: "jobsdb_hk",
-            matchScore: job.match_score,
-            company: job.company,
-          },
-        });
-      }
+      if ((job.match_score ?? 0) >= MATCH_THRESHOLD) strongMatches++;
+      await captureServerEvent({
+        distinctId: userId,
+        event: "job_found",
+        properties: {
+          userId,
+          source: "search",
+          sourceProvider: "jobsdb_hk",
+          matchScore: job.match_score,
+          company: job.company,
+        },
+      });
     }
 
     // Mark the run complete.

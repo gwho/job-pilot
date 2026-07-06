@@ -657,7 +657,7 @@ Last updated: 2026-07-03 (Feature 14)
 | Shadow           | `shadow-sm` |
 
 **Pattern notes:**
-`"use client"` component — recharts requires browser context. Always wraps chart in `<ResponsiveContainer width="100%" height={240}>`. Bar radius `[4, 4, 0, 0]` rounds only top corners — standard for all bar charts in this project. `vertical={false}` on CartesianGrid removes vertical grid lines, keeping only horizontal reference lines. No `<Tooltip>` in Feature 14 — may be added in Feature 17. Feature 17 replaces the mock `data` prop from `page.tsx`.
+`"use client"` component — recharts requires browser context. Always wraps chart in `<ResponsiveContainer width="100%" height={240}>`. Bar radius `[4, 4, 0, 0]` rounds only top corners — standard for all bar charts in this project. `vertical={false}` on CartesianGrid removes vertical grid lines, keeping only horizontal reference lines. No `<Tooltip>`. **Data source (Feature 17):** receives `{ day: string; count: number }[]` (7 entries, rolling window ending today) computed by `buildResearchByDay()` in `page.tsx` from `chartResearchJobsResult` — all non-null `company_research` rows, no limit. `researchedAt` is extracted from the JSONB column using the `hasResearchedAt` type predicate; cutoff anchored to midnight of the oldest displayed day. Presentation-only — does no aggregation itself.
 
 ---
 
@@ -685,7 +685,7 @@ Last updated: 2026-07-03 (Feature 14)
 | Shadow           | `shadow-sm` |
 
 **Pattern notes:**
-Uses `<AreaChart>` not `<LineChart>` — AreaChart provides the gradient fill under the line, which LineChart does not support directly. The gradient is defined in a `<defs><linearGradient id="jobsGradient">` block inside the AreaChart — `id` must be unique per page to avoid SVG gradient collisions (only one area chart per dashboard). `dot={false}` removes individual data point markers for a clean line appearance. Feature 17 replaces the mock `data` prop.
+Uses `<AreaChart>` not `<LineChart>` — AreaChart provides the gradient fill under the line, which LineChart does not support directly. The gradient is defined in a `<defs><linearGradient id="jobsGradient">` block inside the AreaChart — `id` must be unique per page to avoid SVG gradient collisions (only one area chart per dashboard). `dot={false}` removes individual data point markers for a clean line appearance. **Data source (Feature 17):** receives `{ day: string; count: number }[]` (7 entries, rolling window ending today) computed by `buildJobsFoundByDay()` in `page.tsx` from `recentJobsResult` — `found_at` column for jobs within the last 7 days, pre-filtered by the DB query. Presentation-only — does no aggregation itself.
 
 ---
 
@@ -712,7 +712,7 @@ Last updated: 2026-07-03 (Feature 14)
 | Shadow           | `shadow-sm` |
 
 **Pattern notes:**
-`dataKey="range"` for XAxis — data shape is `{ range: string; count: number }[]` with fixed range labels ("50-60%", "60-70%", "70-80%", "80-90%", "90-100%"). Wider `barSize={36}` because 5 bars need more visual weight than the 7-bar Company Research chart. Uses `var(--color-success)` (green) to signal high match scores — aligns with the match score color system elsewhere (≥70% = green). Feature 17 replaces the mock `data` prop with real PostHog event data grouped by match score range.
+`dataKey="range"` for XAxis — data shape is `{ range: string; count: number }[]` with fixed range labels ("50-60%", "60-70%", "70-80%", "80-90%", "90-100%"). Wider `barSize={36}` because 5 bars need more visual weight than the 7-bar Company Research chart. Uses `var(--color-success)` (green) to signal high match scores — aligns with the match score color system elsewhere (≥70% = green). **Data source (Feature 17):** receives 5-entry array computed by `buildMatchScoreDistribution()` in `page.tsx` from `scoredJobsResult` (reuses the existing Feature 15 query — no new query needed). `SCORE_RANGES` constant in `page.tsx` defines the 5 buckets; scores below 50 are excluded. Range labels in `SCORE_RANGES` must match `dataKey="range"` exactly — changing either without the other breaks the chart. Presentation-only — does no aggregation itself.
 
 ---
 
