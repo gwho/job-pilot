@@ -301,4 +301,37 @@ describe("Find Jobs UI/API seam — error handling", () => {
       expect(btn).not.toBeDisabled();
     });
   });
+
+  it("shows error banner when fetch rejects (network / JSON parse error)", async () => {
+    // Current code: catch block only logs — no banner update. Silent failure.
+    global.fetch = vi.fn().mockRejectedValueOnce(new Error("Network error"));
+
+    render(<FindJobsClient initialJobs={[makeJob("j1", "Old Role", "Old Corp")]} />);
+    expect(screen.getByText("Old Role")).toBeInTheDocument();
+
+    await clickFindJobs();
+
+    // RED on current code — catch block returns without setting searchStatus
+    await waitFor(() => {
+      expect(
+        screen.getByText(/search failed|please try again|something went wrong/i),
+      ).toBeInTheDocument();
+    });
+
+    // Old results must still be visible (don't wipe on error)
+    expect(screen.getByText("Old Role")).toBeInTheDocument();
+  });
+
+  it("re-enables the Find Jobs button after a network error", async () => {
+    global.fetch = vi.fn().mockRejectedValueOnce(new Error("Network error"));
+
+    render(<FindJobsClient initialJobs={[]} />);
+
+    await clickFindJobs();
+
+    await waitFor(() => {
+      const btn = screen.getByRole("button", { name: /find jobs/i });
+      expect(btn).not.toBeDisabled();
+    });
+  });
 });

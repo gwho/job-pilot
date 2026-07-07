@@ -253,9 +253,9 @@ All PostHog events must use these exact event names. Never invent new event name
 
 These six events are the only events in this project. Do not add more without updating this list first.
 
-`job_found` powers the Jobs Found Over Time and Match Score Distribution dashboard charts.
-`company_researched` powers the Company Research Activity dashboard chart.
-Always fire these with correct properties.
+Fire these events consistently — they are the analytics record of user activity in PostHog.
+
+The three dashboard charts (Jobs Found Over Time, Company Research Activity, Match Score Distribution) source their data from the DB at render time, not from PostHog event history. `posthog-node` is capture-only and cannot query events. Chart data comes from `jobs.found_at`, `jobs.company_research.researchedAt` (JSONB), and `jobs.match_score` respectively.
 
 ---
 
@@ -339,6 +339,6 @@ Approved dependencies for this project:
 - `lucide-react` — Icons
 - `tailwindcss` — Styling
 - `shadcn/ui` components — UI primitives
-- `recharts` — Dashboard charts (bar, area/line). Feature 14 mock data; Feature 17 real PostHog data.
+- `recharts` — Dashboard charts (bar, area/line). Feature 14 mock data; Feature 17 real DB data.
 
 Do not install any other packages without updating this list first.

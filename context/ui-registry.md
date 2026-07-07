@@ -797,3 +797,9 @@ _Established via `/imprint audit` — full codebase scan across 18 components._
 | Table row hover | `hover:bg-surface-secondary transition-colors` |
 | Divider / separator | `border-border` |
 | Nested sub-card (inside a card) | `border border-border rounded-xl p-4` (`rounded-xl`, not `rounded-2xl`) |
+
+---
+
+## Non-UI Change Notes
+
+- **2026-07-07 — Resume extraction truncation recovery**: Backend-only fix in `agent/extractor.ts` and `__tests__/agent/extractor.test.ts`. No UI components, classes, or visual states changed; existing profile error rendering remains the active pattern.

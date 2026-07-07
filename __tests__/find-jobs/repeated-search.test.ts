@@ -191,7 +191,7 @@ describe("POST /api/agent/find — repeated-search pagination loop", () => {
       .mockResolvedValueOnce(allPage2ActorJobs);
 
     // scoreJobs must return the same length as its input — index-aligned.
-    vi.mocked(scoreJobs).mockImplementation((inputs) =>
+    vi.mocked(scoreJobs).mockImplementation(async (inputs) =>
       inputs.map(() => ({
         matchScore: 50,
         matchReason: "",
@@ -201,7 +201,7 @@ describe("POST /api/agent/find — repeated-search pagination loop", () => {
     );
 
     vi.mocked(createInsforgeServer).mockResolvedValue(
-      buildInsforgeMock(existingJobs, insertResult) as Awaited<
+      buildInsforgeMock(existingJobs, insertResult) as unknown as Awaited<
         ReturnType<typeof createInsforgeServer>
       >,
     );

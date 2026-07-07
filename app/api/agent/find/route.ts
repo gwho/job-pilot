@@ -1,6 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import { createInsforgeServer } from "@/lib/insforge-server";
+import {
+  createInsforgeServer,
+  InsforgeSessionRefreshError,
+} from "@/lib/insforge-server";
 import { discoverJobsDbJobs, toScoringInput, type JobsDbJob } from "@/agent/jobsdb";
 import { scoreJobs } from "@/agent/job-matcher";
 import { captureServerEvent } from "@/lib/posthog-server";
@@ -10,6 +13,10 @@ import type { Profile, Job, JobInsert } from "@/types/index";
 // Block on actor run + dataset read — set high enough for a 10-job scrape.
 // Vercel Pro max is 300s; adjust down for Hobby (60s) or self-hosted.
 export const maxDuration = 300;
+
+const LATE_WRITE_REFRESH_LEEWAY_SECONDS = 600;
+const SESSION_EXPIRED_MESSAGE =
+  "Session expired while saving jobs. Please sign in again and rerun the search.";
 
 export async function POST(request: NextRequest) {
   try {
@@ -97,8 +104,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // InsForge's dynamic query surface does not expose table generics here;
-    // the selected columns are the full jobs table row shape.
     const existingJobs = (existingJobsResult.data ?? []) as Job[];
     const existingByUrl = new Map<string, Job>();
     for (const job of existingJobs) {
@@ -107,30 +112,44 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Paginate the actor until we have ≥TARGET_NEW jobs not already in the DB,
-    // or we exhaust MAX_PAGES pages. Each iteration calls the actor with an
-    // increasing maxPages so it returns pages 1..N cumulatively (actor dedupes
-    // within its own run via seenUrls). We stop early when the actor returns
-    // fewer than a full page (no more listings available).
+    // Paginate the actor until we have ≥TARGET_NEW new jobs not already in the
+    // DB, or we exhaust MAX_PAGES. bestActorJobs tracks the monotonic maximum
+    // — a later call that returns fewer URLs than bestActorJobs is treated as a
+    // suspicious shrink (blocked crawl) and discarded.
     const TARGET_NEW = 10;
     const MAX_PAGES = 5;
-    let allActorJobs: JobsDbJob[] = [];
+    let bestActorJobs: JobsDbJob[] = [];
     let jobsDbError: Error | null = null;
+    let searchIncomplete = false;
 
     for (let page = 1; page <= MAX_PAGES; page++) {
+      let pageResult: JobsDbJob[];
       try {
-        allActorJobs = await discoverJobsDbJobs(jobTitle, location, page * 10, page);
+        pageResult = await discoverJobsDbJobs(jobTitle, location, page * 10, page);
       } catch (err) {
         jobsDbError = err as Error;
+        if (bestActorJobs.length > 0) searchIncomplete = true;
         break;
       }
-      const freshCount = allActorJobs.filter(
+
+      // Monotonic invariant: a later call must never shrink the discovered URL
+      // set. If it does, the actor was likely blocked mid-crawl; retain the
+      // best result accumulated so far and stop pagination.
+      if (pageResult.length < bestActorJobs.length) {
+        if (bestActorJobs.length > 0) searchIncomplete = true;
+        break;
+      }
+
+      bestActorJobs = pageResult;
+
+      const freshCount = bestActorJobs.filter(
         (j) => j.sourceUrl && !existingByUrl.has(j.sourceUrl),
       ).length;
-      if (freshCount >= TARGET_NEW || allActorJobs.length < page * 10) break;
+      if (freshCount >= TARGET_NEW || bestActorJobs.length < page * 10) break;
     }
 
-    if (jobsDbError) {
+    // Hard failure: the actor was blocked before discovering any jobs.
+    if (jobsDbError && bestActorJobs.length === 0) {
       console.error("[api/agent/find] jobsdb error:", jobsDbError);
       await insforge.database
         .from("agent_runs")
@@ -143,9 +162,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Soft failure: later pages were blocked but earlier ones found real jobs.
+    if (jobsDbError) {
+      console.warn("[api/agent/find] partial search block after discovering jobs:", jobsDbError);
+    }
+
     // Dedupe actor results defensively and keep their order for display.
     const seenActorUrls = new Set<string>();
-    const uniqueJobsDbJobs = allActorJobs.filter((job) => {
+    const uniqueJobsDbJobs = bestActorJobs.filter((job) => {
       if (!job.sourceUrl || seenActorUrls.has(job.sourceUrl)) {
         return false;
       }
@@ -158,6 +182,42 @@ export async function POST(request: NextRequest) {
     );
 
     const totalFound = uniqueJobsDbJobs.length;
+    let lateWriteInsforge: Awaited<ReturnType<typeof createInsforgeServer>> | null = null;
+
+    async function getLateWriteInsforge(): Promise<
+      Awaited<ReturnType<typeof createInsforgeServer>>
+    > {
+      if (!lateWriteInsforge) {
+        lateWriteInsforge = await createInsforgeServer({
+          refreshSession: true,
+          refreshLeewaySeconds: LATE_WRITE_REFRESH_LEEWAY_SECONDS,
+        });
+      }
+      return lateWriteInsforge;
+    }
+
+    // Genuine zero-results: the actor succeeded but found no job cards on the
+    // search page (e.g. an obscure query, or the empty state was verified).
+    if (totalFound === 0) {
+      const writeInsforge = await getLateWriteInsforge();
+      await writeInsforge.database
+        .from("agent_runs")
+        .update({
+          status: "completed",
+          jobs_found: 0,
+          completed_at: new Date().toISOString(),
+        })
+        .eq("id", runId)
+        .eq("user_id", userId);
+
+      return NextResponse.json({
+        success: true,
+        jobs: [],
+        jobsFound: 0,
+        newJobs: 0,
+        successMessage: "Found 0 jobs. Try different keywords.",
+      });
+    }
 
     // Batch scoring — index-aligned to newJobs (best-effort, never throws).
     const scores = await scoreJobs(
@@ -201,13 +261,18 @@ export async function POST(request: NextRequest) {
       };
     });
 
+    const incompleteSuffix = searchIncomplete
+      ? " Some later pages could not be searched."
+      : "";
+
     if (records.length === 0) {
       const displayJobs = uniqueJobsDbJobs
         .map((job) => existingByUrl.get(job.sourceUrl))
         .filter((job): job is Job => Boolean(job));
 
       // All discovered jobs already in DB — still mark run complete.
-      await insforge.database
+      const writeInsforge = await getLateWriteInsforge();
+      await writeInsforge.database
         .from("agent_runs")
         .update({
           status: "completed",
@@ -222,19 +287,21 @@ export async function POST(request: NextRequest) {
         jobs: displayJobs,
         jobsFound: totalFound,
         newJobs: 0,
-        successMessage: `Found ${totalFound} jobs — all already saved.`,
+        successMessage: `Found ${totalFound} jobs — all already saved.${incompleteSuffix}`,
       });
     }
 
+    const writeInsforge = await getLateWriteInsforge();
+
     // Persist only new jobs, returning saved rows for the client.
-    const { data: insertedJobs, error: jobsError } = await insforge.database
+    const { data: insertedJobs, error: jobsError } = await writeInsforge.database
       .from("jobs")
       .insert(records)
       .select();
 
     if (jobsError || !insertedJobs) {
       console.error("[api/agent/find] jobs insert error:", jobsError);
-      await insforge.database
+      await writeInsforge.database
         .from("agent_runs")
         .update({ status: "failed", completed_at: new Date().toISOString() })
         .eq("id", runId)
@@ -274,7 +341,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Mark the run complete.
-    await insforge.database
+    await writeInsforge.database
       .from("agent_runs")
       .update({
         status: "completed",
@@ -284,15 +351,27 @@ export async function POST(request: NextRequest) {
       .eq("id", runId)
       .eq("user_id", userId);
 
+    const incompleteSuffixNew = searchIncomplete
+      ? " Some later pages could not be searched, so results may be incomplete."
+      : "";
+
     return NextResponse.json({
       success: true,
       jobs: displayJobs,
       jobsFound: totalFound,
       newJobs: newCount,
       strongMatches,
-      successMessage: `Found ${totalFound} jobs and saved ${newCount} new jobs.`,
+      successMessage: `Found ${totalFound} jobs and saved ${newCount} new jobs.${incompleteSuffixNew}`,
     });
   } catch (error) {
+    if (error instanceof InsforgeSessionRefreshError) {
+      console.error("[api/agent/find] session refresh before save failed:", error);
+      return NextResponse.json(
+        { success: false, error: SESSION_EXPIRED_MESSAGE },
+        { status: 401 },
+      );
+    }
+
     console.error("[api/agent/find]", error);
     return NextResponse.json(
       { success: false, error: "Internal server error" },
