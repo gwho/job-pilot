@@ -3,6 +3,7 @@ import { PlaywrightCrawler, Dataset } from "crawlee";
 import type { Page } from "playwright";
 
 import { canonicalJobUrl, jobsDbSearchUrl } from "./urls.js";
+import { classifySearchPage, shouldFailRun, type SearchOutcome } from "./search-outcome.js";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -40,7 +41,12 @@ async function loadStorageState(): Promise<object | null> {
     return null;
   }
   try {
-    return typeof raw === "string" ? JSON.parse(raw) : raw;
+    const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+    const cookies = (parsed as { cookies?: unknown[] }).cookies ?? [];
+    console.log(
+      `[jobsdb-actor] Session loaded: ${cookies.length} cookies (store: ${storeId ?? "default"}).`,
+    );
+    return parsed;
   } catch {
     console.warn("[jobsdb-actor] JOBSDB_SESSION is not valid JSON — proceeding without auth.");
     return null;
@@ -49,42 +55,88 @@ async function loadStorageState(): Promise<object | null> {
 
 // ─── Search page extraction ───────────────────────────────────────────────────
 
-async function extractCardLinks(page: Page): Promise<string[]> {
-  // Detect session expiry.
+type ExtractResult = { links: string[]; outcome: SearchOutcome };
+
+async function extractCardLinks(page: Page): Promise<ExtractResult> {
   const url = page.url();
+
+  // Login redirect check — authoritative block signal.
   if (url.includes("/login") || url.includes("/sign-in")) {
     console.warn("[jobsdb-actor] Redirected to login — session may be expired. Re-capture storageState.");
-    return [];
+    return { links: [], outcome: "login-redirect" };
   }
 
-  await page.waitForSelector('[data-testid="job-card"]', { timeout: 15000 }).catch(() => {});
+  // Race: resolve as soon as any meaningful DOM signal appears (or on timeout).
+  await Promise.race([
+    page.waitForSelector('[data-testid="job-card"]', { timeout: 15000 }),
+    page.waitForSelector('[data-automation="searchZeroResults"]', { timeout: 15000 }),
+    page.waitForURL("**/login**", { timeout: 15000 }),
+    page.waitForURL("**/sign-in**", { timeout: 15000 }),
+  ]).catch(() => {});
 
-  // Scroll the job-card list container to its bottom so lazy-loaded cards
-  // are rendered before we query the DOM. JobsDB uses a split-screen layout
-  // where the left panel scrolls independently from the right detail panel.
-  await page.evaluate(() => {
-    const container =
-      (document.querySelector('[data-automation="sortedJobsList"]') as HTMLElement | null) ??
-      (document.querySelector('[data-testid="job-list"]') as HTMLElement | null) ??
-      document.documentElement;
-    container.scrollTo(0, container.scrollHeight);
+  const initialCardCount = (await page.$$('[data-testid="job-card"]')).length;
+
+  if (initialCardCount > 0) {
+    // Scroll to trigger lazy-loaded cards, then re-query.
+    await page.evaluate(() => {
+      const container =
+        (document.querySelector('[data-automation="sortedJobsList"]') as HTMLElement | null) ??
+        (document.querySelector('[data-testid="job-list"]') as HTMLElement | null) ??
+        document.documentElement;
+      container.scrollTo(0, container.scrollHeight);
+    });
+    await page.waitForTimeout(800);
+
+    const rawLinks = await page.evaluate(() => {
+      const cards = Array.from(document.querySelectorAll('[data-testid="job-card"]'));
+      return cards
+        .map((card) => {
+          const a = card.querySelector('a[data-automation="job-list-view-job-link"]') as HTMLAnchorElement | null;
+          return a?.href ?? "";
+        })
+        .filter(Boolean);
+    });
+
+    return { links: rawLinks, outcome: "ok" };
+  }
+
+  // Zero cards — collect diagnostics before classifying.
+  const diagUrl = page.url();
+  const diagTitle = await page.title().catch(() => "");
+  const diagEmptyState = await page
+    .locator('[data-automation="searchZeroResults"]')
+    .isVisible()
+    .catch(() => false);
+  const diagLoginMarker = diagUrl.includes("/login") || diagUrl.includes("/sign-in");
+  const diagBlockMarker = await page
+    .locator('[data-testid="captcha"], [id*="captcha"], [class*="captcha"], [id*="challenge"]')
+    .isVisible()
+    .catch(() => false);
+
+  console.log(
+    `[jobsdb-actor][diag] zero-cards: url=${diagUrl} | title="${diagTitle}" | emptyState=${diagEmptyState} | login=${diagLoginMarker} | block=${diagBlockMarker}`,
+  );
+
+  const outcome = classifySearchPage({
+    url: diagUrl,
+    cardCount: 0,
+    hasKnownEmptySelector: diagEmptyState,
+    hasEmptyTextFallback: false,
   });
-  // Give the browser a moment to render any newly visible cards.
-  await page.waitForTimeout(800);
 
-  // Collect ALL card links — no slice here. Dedup happens in the caller
-  // using the shared seenUrls set, so we always consider every card on the page.
-  const rawLinks = await page.evaluate(() => {
-    const cards = Array.from(document.querySelectorAll('[data-testid="job-card"]'));
-    return cards
-      .map((card) => {
-        const a = card.querySelector('a[data-automation="job-list-view-job-link"]') as HTMLAnchorElement | null;
-        return a?.href ?? "";
-      })
-      .filter(Boolean);
-  });
+  if (outcome === "suspicious-empty") {
+    const store = await Actor.openKeyValueStore();
+    const runId = Actor.getEnv().actorRunId ?? "unknown";
+    const buf = await page.screenshot({ fullPage: false }).catch(() => null);
+    if (buf) {
+      await store.setValue(`diagnostics/${runId}/suspicious-empty.png`, buf, {
+        contentType: "image/png",
+      });
+      console.log(`[jobsdb-actor] Screenshot saved to diagnostics/${runId}/suspicious-empty.png`);
+    }
+  }
 
-  return rawLinks;
+  return { links: [], outcome };
 }
 
 // ─── Detail page extraction ───────────────────────────────────────────────────
@@ -141,12 +193,11 @@ if (!query) {
 
 const storageState = await loadStorageState();
 
-// Shared dedup set: canonical URLs already enqueued for detail scraping.
-// Populated only in SEARCH handlers (which run sequentially — each page is
-// only enqueued after the previous page's handler has finished).
 const seenUrls = new Set<string>();
-// Counter incremented in DETAIL handler — reliable across Apify's ESM closure context.
 let jobsPushed = 0;
+// Outcome of the page-1 SEARCH request — used to decide whether to fail the run.
+let page1Outcome: SearchOutcome = "ok";
+let page1HttpStatus = "unknown";
 
 const crawler = new PlaywrightCrawler({
   browserPoolOptions: {
@@ -161,14 +212,24 @@ const crawler = new PlaywrightCrawler({
       }
     },
   ],
-  // maxPages search-result pages + maxItems detail pages.
   maxRequestsPerCrawl: maxPages + maxItems,
   async requestHandler({ request, page, enqueueLinks, addRequests }) {
     if (request.label === "SEARCH") {
       const currentPage = (request.userData as { page?: number }).page ?? 1;
-      const rawLinks = await extractCardLinks(page);
+      const { links: rawLinks, outcome } = await extractCardLinks(page);
 
-      // Canonicalize and deduplicate across all pages seen so far.
+      if (currentPage === 1) {
+        page1Outcome = outcome;
+      }
+
+      // Stop enqueueing if the search page yielded no cards.
+      if (rawLinks.length === 0) {
+        console.log(
+          `[jobsdb-actor] Page ${currentPage}: 0 cards found (outcome: ${outcome}). Stopping pagination.`,
+        );
+        return;
+      }
+
       const newLinks: string[] = [];
       for (const href of rawLinks) {
         if (seenUrls.size >= maxItems) break;
@@ -186,7 +247,6 @@ const crawler = new PlaywrightCrawler({
 
       await enqueueLinks({ urls: newLinks, label: "DETAIL" });
 
-      // Enqueue the next search-result page if there is more budget.
       if (currentPage < maxPages && seenUrls.size < maxItems) {
         await addRequests([
           {
@@ -205,7 +265,15 @@ const crawler = new PlaywrightCrawler({
     }
   },
   failedRequestHandler({ request, error }) {
-    console.warn(`[jobsdb-actor] Request failed: ${request.url}`, error);
+    const statusMatch = (error as Error).message?.match(/\b(\d{3})\b/);
+    const httpStatus = statusMatch?.[1] ?? "unknown";
+    console.warn(
+      `[jobsdb-actor][diag] Request failed: url=${request.url} | label=${request.label} | page=${(request.userData as { page?: number }).page ?? 1} | httpStatus=${httpStatus} | error=${(error as Error).message}`,
+    );
+    if (request.label === "SEARCH" && (request.userData as { page?: number }).page === 1) {
+      page1Outcome = "blocked-http";
+      page1HttpStatus = httpStatus;
+    }
   },
 });
 
@@ -215,4 +283,14 @@ await crawler.run([
 
 console.log(`[jobsdb-actor] Done. Pushed ${jobsPushed} jobs across up to ${maxPages} page(s).`);
 
-await Actor.exit();
+if (shouldFailRun({ page1Outcome, jobsPushed })) {
+  let failMessage: string;
+  if ((page1Outcome as SearchOutcome) === "blocked-http") {
+    failMessage = `Search request blocked at HTTP level (status ${page1HttpStatus}) — page never loaded, no jobs discovered.`;
+  } else {
+    failMessage = `Search page loaded but returned no recognisable content (outcome: ${page1Outcome}) — no jobs discovered. Check diagnostics KV store for screenshot.`;
+  }
+  await Actor.fail(failMessage);
+} else {
+  await Actor.exit();
+}

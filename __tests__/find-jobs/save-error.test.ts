@@ -149,7 +149,7 @@ describe("POST /api/agent/find — jobs insert error", () => {
     ]);
 
     vi.mocked(createInsforgeServer).mockResolvedValue(
-      buildInsforgeMockWithInsertError() as Awaited<
+      buildInsforgeMockWithInsertError() as unknown as Awaited<
         ReturnType<typeof createInsforgeServer>
       >,
     );

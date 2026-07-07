@@ -562,6 +562,7 @@ const openai = new OpenAI({
 const response = await openai.chat.completions.create({
   model: "nvidia/nemotron-3-ultra-550b-a55b:free",
   response_format: { type: "json_object" },
+  stream: false,
   temperature: 0.3,
   messages: [
     {
@@ -575,7 +576,15 @@ const response = await openai.chat.completions.create({
   ],
 });
 
-const result = JSON.parse(response.choices[0].message.content!);
+const raw = response.choices[0]?.message?.content;
+if (!raw) return { success: false, error: "Could not process AI response" };
+
+let result: unknown;
+try {
+  result = JSON.parse(raw);
+} catch {
+  return { success: false, error: "Could not process AI response" };
+}
 ```
 
 **Temperature settings:**
@@ -589,7 +598,7 @@ const result = JSON.parse(response.choices[0].message.content!);
 - Job matching + scoring: `300`
 - Company research synthesis: `2000`
 - Resume generation: `1000`
-- Profile extraction from resume: `800`
+- Profile extraction from resume: initial `2500`, one compact retry at `3000` only when `finish_reason === "length"`
 
 **Rules:**
 
@@ -597,6 +606,8 @@ const result = JSON.parse(response.choices[0].message.content!);
 - Always use `response_format: { type: 'json_object' }` for structured data
 - Always parse `response.choices[0].message.content` as string — even with json_object it returns a string
 - Always validate parsed JSON before using — wrap in try/catch
+- Never log raw AI response content for resume extraction — it can contain PII
+- For profile extraction, bound the requested output size and retry once with compact instructions when the first response is truncated
 - Match threshold is always `MATCH_THRESHOLD` from `lib/utils.ts` — never hardcode 70
 - Company research synthesis must always return a complete dossier — never return empty even if browser research failed
 

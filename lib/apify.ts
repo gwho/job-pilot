@@ -40,7 +40,8 @@ export async function runJobsDbActor(
     });
 
   if (run.status !== "SUCCEEDED") {
-    throw new Error(`JobsDB actor run ${run.status} (runId: ${run.id})`);
+    const detail = run.statusMessage ? ` — ${run.statusMessage}` : "";
+    throw new Error(`JobsDB actor run ${run.status}${detail} (runId: ${run.id})`);
   }
 
   const { items } = await client

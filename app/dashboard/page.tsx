@@ -224,9 +224,8 @@ export default async function DashboardPage() {
 
   const researchCandidates: ActivityCandidate[] = (researchJobsResult.data ?? [])
     .flatMap((row) => {
-      const researchedAt = (row.company_research as { researchedAt?: string } | null)
-        ?.researchedAt;
-      if (!researchedAt) return [];
+      if (!hasResearchedAt(row.company_research)) return [];
+      const researchedAt = row.company_research.researchedAt;
       const ts = new Date(researchedAt).getTime();
       if (isNaN(ts)) return [];
       return [

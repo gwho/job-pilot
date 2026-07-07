@@ -115,6 +115,10 @@ export function FindJobsClient({ initialJobs }: Props) {
       replaceViewState({ page: 1 });
     } catch (error) {
       console.error("[FindJobsClient] search error:", error);
+      setSearchStatus({
+        message: "Search failed. Please try again.",
+        isError: true,
+      });
     } finally {
       setIsLoading(false);
     }
