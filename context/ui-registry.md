@@ -803,3 +803,4 @@ _Established via `/imprint audit` — full codebase scan across 18 components._
 ## Non-UI Change Notes
 
 - **2026-07-07 — Resume extraction truncation recovery**: Backend-only fix in `agent/extractor.ts` and `__tests__/agent/extractor.test.ts`. No UI components, classes, or visual states changed; existing profile error rendering remains the active pattern.
+- **2026-07-23 — Company research synthesis recovery**: Backend-only fix in `agent/research.ts` and `__tests__/agent/research-synthesis.test.ts`. No UI components, classes, or visual states changed. `components/job-details/CompanyResearch.tsx` already guards every dossier field (`.length > 0` for arrays, truthy checks for strings), so the new deterministic fallback dossier — which can have sparse or empty sections — renders correctly with no code changes: sections it has nothing for simply don't render, same as today's behavior for a thin AI-generated dossier.
