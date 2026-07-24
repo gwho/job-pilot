@@ -1,73 +1,48 @@
-# Memory — Feature 16 Complete + Full Documentation Suite
+# Memory — Company Research Synthesis Recovery (Issue #38)
 
-Last updated: 2026-07-05
+Last updated: 2026-07-23
 
 ## What was built
 
-### Feature 16 implementation — Recent Activity Real Data (fully complete)
+### Company Research Synthesis Recovery — fully complete
 
-- `components/dashboard/RecentActivity.tsx` — `ActivityItem` type gains `id: string` as first field. `key={index}` replaced with `key={item.id}`. Empty state added when `items.length === 0`: "No activity yet. Run a search to get started." with `/find-jobs` link. `Link` imported from `next/link`.
-- `app/dashboard/page.tsx` — `mockActivity` constant removed. `Promise.all` expanded from 4 to 6 queries (added `agent_runs` completed query + `jobs` researched query, each limited to 20 candidates). `formatRelativeDate` added to utils import. Both sources normalized into `ActivityCandidate[]` (local type = `ActivityItem & { sortTs: number }`). Merged, sorted by timestamp descending, trimmed to 10, `sortTs` stripped. `activityItems` passed to `<RecentActivity>`. Error logging with `[dashboard/activity]` prefix.
-- `context/ui-registry.md` — RecentActivity + ActivityRow entry updated: `id: string` field documented, `key={item.id}` noted, empty state copy/link pattern documented, data sources documented.
-- `context/progress-tracker.md` — Feature 16 marked complete; Feature 17 set as next; Feature 16 decision entry added to Decisions Made section.
-
-### Documentation suite for Feature 16
-
-- `docs/architect/16-recent-activity-real-data/decisions.md` — 7 decisions from the architect session
-- `docs/architect/16-recent-activity-real-data/discussion.md` — 11 deep concept sections
-- `docs/architect/16-recent-activity-real-data/ai-discussion-topics.md` — 25 questions across 6 groups
-- `docs/plan/16-recent-activity-real-data/plan.md` — 5 files documented, 9 invariants captured
-- `docs/plan/16-recent-activity-real-data/explanation.md` — 9 sections (end-to-end flow, why found_at is wrong, JSONB filter safety, DB/JS sort gap, flatMap pattern, ActivityCandidate type, source-qualified IDs, no "use client", empty state ownership)
-- `docs/plan/16-recent-activity-real-data/ai-discussion-topics.md` — 17 questions across 4 groups
-- `docs/tutorials/29-recent-activity-real-data/README.md` — Tutorial 29: 8 parts, 5 LLM pre-study prompts, 3 challenges, "Good next /teach topics" section
-
----
+- `agent/research.ts` — `synthesizeDossier()` rewritten. Added `DossierSynthesisSchema` (zod: `companyOverview`/`whyThisRole` required, rest optional arrays), `parseSynthesisAttempt()` (treats `finish_reason === "length"`, empty content, `JSON.parse` failure, and zod validation failure all as one "invalid" outcome), `requestDossierSynthesis()` (non-streaming typed OpenAI request), one bounded retry with compact-instructions suffix at a higher token budget (2000 → 2600) on any invalid first attempt, and `buildFallbackDossier()` — a deterministic non-AI dossier built from `job.about_role`/`job.matched_skills`/`job.missing_skills`/already-collected browser research, used only when both attempts are invalid (no third model call). `researchCompany()`'s browser-research logic, DB fetch/save, and route caller were untouched.
+- `__tests__/agent/research-synthesis.test.ts` — new file, 8 tests, exercises `researchCompany()` (not a shallow helper) with OpenAI/InsForge/Hyperbrowser/Stagehand mocked, browser research disabled via a job fixture with no company/URL. Two of the original red failures reproduced the exact production error strings byte-for-byte.
+- `context/library-docs.md` — Nemotron section updated: retry budget, "retries on any invalid shape not just truncation" (differs from `agent/extractor.ts`), fallback-dossier policy, PII-safe logging rule extended to company research.
+- `context/ui-registry.md` — non-UI change note added (backend-only, `CompanyResearch.tsx` already guards every field so sparse fallback dossiers render fine unmodified).
+- `context/progress-tracker.md` — decision entry added.
+- `docs/plan/company-research-synthesis-recovery/{plan.md,explanation.md,ai-discussion-topics.md}` — full docs written.
+- GitHub issue [#38](https://github.com/gwho/job-pilot/issues/38) filed before implementation with confirmed root cause and expected behavior.
+- Branch `fix/company-research-synthesis-recovery`, checked out from `fix/find-jobs-pipeline-reliability` (this repo uses a stacked-PR workflow — every fix/feature branch's PR targets the previous branch, not `main`; **PR not yet opened for this branch**).
 
 ## Decisions made
 
-- **Research events use `company_research.researchedAt` as the display and sort timestamp** — `found_at` is when the job was scraped, not when research ran. These differ by days when a user finds a job and researches it later. `researchedAt` is written by `agent/research.ts:283` on every successful synthesis.
-- **DB pre-sort uses `found_at`, JS re-sort uses `researchedAt`** — InsForge SDK cannot sort by JSONB subfields. `found_at` is used only for candidate pre-selection (top 20 by recency); `researchedAt` is used for the final display order.
-- **20 candidates per source, 10 items in the final feed** — wider candidate pool reduces the risk of missing a recently-researched old job that falls outside the top 10 by `found_at`.
-- **`company_research IS NOT NULL` is the correct filter for research events** — `synthesizeDossier` throws on any failure path, so the DB update never runs on failure. No empty objects or partial dossiers can be saved.
-- **`agent_runs` filtered to `status = "completed"` only** — running rows have null `completed_at` and `jobs_found`. Failed rows are operational state, not user achievements. Neither belongs in the feed.
-- **No per-source quota** — recency decides which 10 items appear. Enforcing balance (5 search, 5 research) would distort the chronological truth.
-- **`id: string` added to `ActivityItem`** — source-qualified IDs: `search-${run.id}` / `research-${job.id}`. Enables `key={item.id}` and self-documenting React DevTools.
-- **Empty state inside `RecentActivity`**, not `page.tsx` — the component owns all rendering states of the activity card. Page passes props, component decides what to render.
-- **`RecentActivity` stays a Server Component** — `Link` from `next/link` is server-compatible. No state, no browser APIs. No `"use client"` needed.
-- **Activity query errors: log with `[dashboard/activity]` prefix, produce `[]` fallback, never throw** — extends the Feature 15 degradation contract to the activity feed.
-
----
+- **Root cause (confirmed, not theoretical)**: `synthesizeDossier()` called `JSON.parse()` directly on Nemotron output with no `finish_reason` check, no try/catch, no runtime shape validation (`as Record<string, unknown>` cast). Truncated or prose output threw an uncaught `SyntaxError` through `researchCompany()` to a generic 500 in `/api/agent/research`.
+- **Retry on ANY invalid shape, not just truncation** — deliberately diverges from `agent/extractor.ts` precedent (which only retries on `finish_reason === "length"` and hard-fails immediately on parse/shape errors). Justified because company research has a fallback safety net to fall back on if the retry also fails, making a broader retry cheap insurance rather than the last line of defense.
+- **Terminal behavior after exhausted retry: deterministic non-AI fallback dossier, not a controlled failure** — confirmed with the user before implementation. Chosen because CLAUDE.md's "company research always returns a dossier" invariant, read strictly, should cover synthesis failure the same way it already covers browser-research failure — not leave the user with nothing after the expensive browser step.
+- **Fallback deliberately does NOT take the full candidate `profile`** — confirmed with the user after `/project-review` flagged it as a judgment call. `job.matched_skills`/`missing_skills` already encode the profile comparison (computed earlier by the matcher); re-deriving from raw profile would duplicate that work for a last-resort path. Documented explicitly in `agent/research.ts`'s comment and `explanation.md`.
+- **No third Nemotron call ever** — the fallback exists specifically because it can't fail the way the first two attempts can (no AI call in it at all).
 
 ## Problems solved
 
-- **TypeScript narrowing with `.filter().map()` on JSONB extraction** — `.filter()` does not carry type narrowing into the subsequent `.map()` callback. Used `.flatMap()` instead: `if (!researchedAt) return []; return [item]` narrows the type cleanly within the same callback.
-- **`sortTs` field isolation** — `ActivityCandidate = ActivityItem & { sortTs: number }` declared inside `DashboardPage` function body (not exported). Stripped via explicit destructuring `.map(({ id, type, label, timeAgo }) => ...)` before passing to component.
-- **`type: "research" as const` required inside `flatMap`** — TypeScript infers the string literal type as `string` without `as const`, failing the `"search" | "research"` union check.
-
----
+- **Test mock leakage between test cases**: `vi.clearAllMocks()` only resets call history, not queued `mockResolvedValueOnce()` values — an unconsumed second queued response from a test where the code only made one call (because it threw) leaked into the next test's first call, causing confusing cross-test failures. Fixed by also calling `mocks.create.mockReset()` in `beforeEach` (purges the queue) while leaving the `vi.mock("openai", ...)` constructor's `mockImplementation` — set on a different mock object — untouched.
+- **Diagnosis-phase red loop**: reproduced the bug by disabling browser research entirely (job fixture with no `company`/`source_url`/`external_apply_url`, so `deriveHomepageUrl()` returns `""`), reaching `synthesizeDossier()` directly without needing to mock Stagehand page interactions — kept the loop fast (~1.3s) and deterministic while still exercising the real `researchCompany()` boundary.
 
 ## Current state
 
-- **Feature 16 fully complete** — Recent Activity feed shows real DB data from `agent_runs` and `jobs`; verified in-browser; all documentation and Tutorial 29 written
-- **29 tutorials** written
-- **Build clean** — TypeScript and lint pass
-- **Mock data remaining in `page.tsx`**: `mockCompanyResearchData`, `mockJobsFoundData`, `mockMatchScoreData` for the three chart components — intentional, deferred to Feature 17
-- **Find Jobs save bug still fixed** — `pg_stat_statements` extension enabled from last session; E2E confirmed
-
----
+- Fix fully implemented and verified: 8/8 new tests green, full suite 95/95 green, lint clean, `next build` clean.
+- All required documentation written and committed to working tree (not yet committed to git — working tree has uncommitted changes on `fix/company-research-synthesis-recovery`).
+- **No git commit made yet, no PR opened.** The user has not been asked to confirm a commit/push/PR — this session stopped at `/remember save` per the debug brief's skill order, before the commit step.
+- Repo-wide: this session also discovered (via git/gh, not memory) that Feature 17 (Analytics Charts — Real Data) and the entire `fix/find-jobs-pipeline-reliability` hardening effort (actor outcome classification, InsForge token refresh, resume extraction truncation recovery) are complete and already pushed as PR #36 — but **PR #36 and all 19 other feature PRs are still open, none merged to `main`**. This stacked-PR backlog was not addressed this session.
 
 ## Next session starts with
 
-Run `/remember restore`, check `context/build-plan.md` for Feature 17 scope (chart real data from PostHog), then `/architect Feature 17` before any code. Feature 17 wires the three chart components (`CompanyResearchChart`, `JobsFoundChart`, `MatchScoreChart`) to real PostHog analytics data, replacing the three remaining mock constants in `page.tsx`.
+Run `/remember restore`. Immediate next step: commit the uncommitted changes on `fix/company-research-synthesis-recovery` (agent/research.ts, __tests__/agent/research-synthesis.test.ts, context/library-docs.md, context/ui-registry.md, context/progress-tracker.md, docs/plan/company-research-synthesis-recovery/) and open PR against `fix/find-jobs-pipeline-reliability` per the debug brief's branch strategy (`docs/debug/debug-ideas.md`) — but confirm with the user first, since committing/pushing/opening a PR are visible actions this session did not get explicit go-ahead for yet.
 
----
+After that: no feature is queued (progress-tracker's Phase 5 is the last phase, "Next: —"). Worth raising with the user: the 20-PR stacked backlog on GitHub, none merged to `main` — is that intentional, or does it need addressing before starting anything new?
 
 ## Open questions
 
-- **GitHub Issue #19** — `job_found` PostHog event fires only for `match_score >= 70` (should fire for all saved jobs). Fix in `app/api/agent/find/route.ts`. Must be resolved before Feature 17 (which depends on PostHog event counts being accurate).
-- **`catch` path still silent** — `handleSearch` `catch` block only calls `console.error`. Needs `setSearchStatus({ message: "Network error...", isError: true })`. Deferred.
-- **DB-level race condition** — concurrent `/api/agent/find` requests from same user could insert duplicate jobs. Needs `UNIQUE (user_id, source_url)`. Deferred.
-- **JobsDB session expiry** — re-capture needed ~mid-July 2026. Run `node scripts/capture-jobsdb-session.mjs`.
-- **`not-found.tsx`** — custom 404 page absent. Minor; deferred.
-- **Fire-and-forget `agent_runs` status updates** — all error branches in `app/api/agent/find/route.ts` don't check the result of `agent_runs` UPDATE to `status: "failed"`. Pre-existing; deferred.
-- **InsForge new database setup runbook** — after creating any new InsForge DB, run `CREATE EXTENSION IF NOT EXISTS pg_stat_statements;` immediately or batch INSERTs will fail silently.
+- Should the 20 open, unmerged stacked PRs (including this new one once opened) be merged down to `main` at some point, or is the stack itself the intended long-term state? Not addressed this session.
+- No new product feature is queued after Phase 5 / the reliability fixes — next direction needs deciding with the user.
+- `docs/debug/debug-ideas.md` (the source of this session's task) remains untracked in git — not committed, not cleaned up. Leave for the user to decide (it's their working note, not something to delete unprompted).

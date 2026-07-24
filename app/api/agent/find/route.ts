@@ -5,7 +5,7 @@ import {
   InsforgeSessionRefreshError,
 } from "@/lib/insforge-server";
 import { discoverJobsDbJobs, toScoringInput, type JobsDbJob } from "@/agent/jobsdb";
-import { scoreJobs } from "@/agent/job-matcher";
+import { scoreJobs, UNSCORED_MATCH_REASON } from "@/agent/job-matcher";
 import { captureServerEvent } from "@/lib/posthog-server";
 import { MATCH_THRESHOLD } from "@/lib/utils";
 import type { Profile, Job, JobInsert } from "@/types/index";
@@ -17,6 +17,32 @@ export const maxDuration = 300;
 const LATE_WRITE_REFRESH_LEEWAY_SECONDS = 600;
 const SESSION_EXPIRED_MESSAGE =
   "Session expired while saving jobs. Please sign in again and rerun the search.";
+
+// A separate cap from TARGET_NEW (new-job discovery target) even though both
+// happen to be 10 today — this one bounds how many previously-unscored
+// existing rows get folded into a search's scoring batch, so it doesn't
+// silently grow if TARGET_NEW ever changes for an unrelated reason.
+const RESCORE_CAP = 10;
+
+// Exact legacy sentinel written by the pre-fix agent/job-matcher.ts, which
+// fabricated `matchScore: 0` instead of `null` on any scoring failure. A real
+// 0% model score has a different match_reason, so checking match_reason (not
+// just match_score === 0) keeps this from ever reprocessing a genuine score.
+function isLegacyFallbackScore(job: Job): boolean {
+  return (
+    job.match_score === 0 &&
+    job.match_reason === UNSCORED_MATCH_REASON &&
+    (job.matched_skills?.length ?? 0) === 0 &&
+    (job.missing_skills?.length ?? 0) === 0
+  );
+}
+
+// Both the legacy 0-sentinel and a plain null score mean "never really
+// scored" — rediscovery is a safe, natural trigger to retry either, and
+// never overwrites a row that already holds a valid score.
+function needsRescore(job: Job): boolean {
+  return job.match_score === null || isLegacyFallbackScore(job);
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -181,6 +207,22 @@ export async function POST(request: NextRequest) {
       (job) => !existingByUrl.has(job.sourceUrl),
     );
 
+    // Rediscovered rows still carrying an unscored signature get another
+    // scoring attempt, capped and oldest-first so a large backlog drains
+    // monotonically across repeated searches instead of all landing in one
+    // oversized batch.
+    const rescoreCandidates = uniqueJobsDbJobs
+      .filter((job) => {
+        const existing = existingByUrl.get(job.sourceUrl);
+        return existing !== undefined && needsRescore(existing);
+      })
+      .sort((a, b) => {
+        const foundAtA = existingByUrl.get(a.sourceUrl)!.found_at;
+        const foundAtB = existingByUrl.get(b.sourceUrl)!.found_at;
+        return foundAtA.localeCompare(foundAtB);
+      })
+      .slice(0, RESCORE_CAP);
+
     const totalFound = uniqueJobsDbJobs.length;
     let lateWriteInsforge: Awaited<ReturnType<typeof createInsforgeServer>> | null = null;
 
@@ -219,15 +261,19 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Batch scoring — index-aligned to newJobs (best-effort, never throws).
+    // Batch scoring — new jobs first, then rescore candidates, so a single
+    // index slice recovers each group's scores (best-effort, never throws).
+    const jobsToScore = [...newJobs, ...rescoreCandidates];
     const scores = await scoreJobs(
-      newJobs.map(toScoringInput),
+      jobsToScore.map(toScoringInput),
       (profile as Profile) ?? null,
     );
+    const newScores = scores.slice(0, newJobs.length);
+    const rescoreScores = scores.slice(newJobs.length);
 
     // Build one job record per new job + its score.
     const records: JobInsert[] = newJobs.map((job, i) => {
-      const score = scores[i];
+      const score = newScores[i];
       const jobType =
         job.jobType?.toLowerCase().includes("part")
           ? "parttime"
@@ -265,9 +311,52 @@ export async function POST(request: NextRequest) {
       ? " Some later pages could not be searched."
       : "";
 
+    // Rescore existing rows carrying an unscored signature. Non-fatal: a
+    // failed update just leaves that row as it was, never blocks the
+    // response. Written unconditionally with whatever scoreJobs returned —
+    // a real score corrects the row, and a repeat scoring failure still
+    // normalizes a legacy match_score: 0 to null instead of leaving the
+    // fabricated sentinel in place. Never overwrites a row that wasn't
+    // selected by needsRescore, and never inserts a duplicate — this only
+    // updates rows already present in existingByUrl.
+    const rescoredByUrl = new Map<string, Job>();
+    if (rescoreCandidates.length > 0) {
+      const rescoreWriteInsforge = await getLateWriteInsforge();
+      await Promise.all(
+        rescoreCandidates.map(async (job, i) => {
+          const existing = existingByUrl.get(job.sourceUrl)!;
+          const score = rescoreScores[i];
+          const { data: updated, error } = await rescoreWriteInsforge.database
+            .from("jobs")
+            .update({
+              match_score: score.matchScore,
+              match_reason: score.matchReason,
+              matched_skills: score.matchedSkills,
+              missing_skills: score.missingSkills,
+            })
+            .eq("id", existing.id)
+            .eq("user_id", userId)
+            .select()
+            .single();
+
+          if (error || !updated) {
+            console.error("[api/agent/find] rescore update failed:", {
+              jobId: existing.id,
+              error,
+            });
+            return;
+          }
+          rescoredByUrl.set(job.sourceUrl, updated as Job);
+        }),
+      );
+    }
+
     if (records.length === 0) {
       const displayJobs = uniqueJobsDbJobs
-        .map((job) => existingByUrl.get(job.sourceUrl))
+        .map(
+          (job) =>
+            rescoredByUrl.get(job.sourceUrl) ?? existingByUrl.get(job.sourceUrl),
+        )
         .filter((job): job is Job => Boolean(job));
 
       // All discovered jobs already in DB — still mark run complete.
@@ -321,9 +410,16 @@ export async function POST(request: NextRequest) {
     }
 
     const displayJobs = uniqueJobsDbJobs
-      .map((job) => insertedByUrl.get(job.sourceUrl) ?? existingByUrl.get(job.sourceUrl))
+      .map(
+        (job) =>
+          insertedByUrl.get(job.sourceUrl) ??
+          rescoredByUrl.get(job.sourceUrl) ??
+          existingByUrl.get(job.sourceUrl),
+      )
       .filter((job): job is Job => Boolean(job));
 
+    // job_found models discovery, not remediation — only fired for records
+    // this run actually inserted, never for rediscovered rescore candidates.
     let strongMatches = 0;
     for (const job of insertedJobs) {
       if ((job.match_score ?? 0) >= MATCH_THRESHOLD) strongMatches++;

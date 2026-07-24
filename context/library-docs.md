@@ -595,8 +595,8 @@ try {
 
 **Max tokens:**
 
-- Job matching + scoring: `300`
-- Company research synthesis: `2000`
+- Job matching + scoring: initial `2000`, one retry at `2600` on any whole-response failure (request error, truncation, empty/non-JSON content, or an invalid envelope)
+- Company research synthesis: initial `2000`, one compact retry at `2600` when the first attempt is truncated, non-JSON, or fails Zod shape validation
 - Resume generation: `1000`
 - Profile extraction from resume: initial `2500`, one compact retry at `3000` only when `finish_reason === "length"`
 
@@ -605,11 +605,14 @@ try {
 - Model string is always `'nvidia/nemotron-3-ultra-550b-a55b:free'` — never use other model names
 - Always use `response_format: { type: 'json_object' }` for structured data
 - Always parse `response.choices[0].message.content` as string — even with json_object it returns a string
-- Always validate parsed JSON before using — wrap in try/catch
-- Never log raw AI response content for resume extraction — it can contain PII
+- Always validate parsed JSON before using — wrap in try/catch, and validate shape with a Zod schema (`safeParse`), not just a type cast
+- Never log raw AI response content for resume extraction, company research, or job matching — it can contain PII (profile skills, work history, job descriptions); log metadata only (`finish_reason`, content length, brace-start/end check, parse success, Zod issue paths, attempt number)
 - For profile extraction, bound the requested output size and retry once with compact instructions when the first response is truncated
+- For company research synthesis, retry once (compact instructions, higher token budget) on **any** invalid first attempt — truncated, non-JSON, or wrong shape — not truncation alone. This differs from profile extraction, which only retries on truncation and fails immediately on shape errors; company research retries more broadly because it still has a deterministic non-AI fallback to fall back on, so the retry is cheap insurance rather than the last line of defense.
+- For job matching (batch scoring), keep envelope validity separate from per-entry validity: validate that the response is `{ scores: [...] }` at all (retry the whole batch once on any failure here — request error, truncation, empty/non-JSON content, or an invalid envelope), but validate each score entry independently afterward so one malformed, missing, or duplicated entry only leaves its own job unscored rather than invalidating the whole response or triggering a retry. See `agent/job-matcher.ts`'s `parseScoringAttempt()` (envelope) vs. `alignScores()` (per-entry).
 - Match threshold is always `MATCH_THRESHOLD` from `lib/utils.ts` — never hardcode 70
-- Company research synthesis must always return a complete dossier — never return empty even if browser research failed
+- Company research synthesis must always return a complete dossier — never return empty even if browser research failed, and never throw even if both synthesis attempts fail. After the retry is exhausted, build a deterministic dossier from `job.about_role`, `job.matched_skills`/`missing_skills`, and any browser research already collected — no third model call. See `agent/research.ts`'s `buildFallbackDossier()`.
+- Job matching has no deterministic non-AI fallback score — after the retry is exhausted (or an individual entry can't be aligned), the terminal state is `matchScore: null` (unscored), never a fabricated number. This differs from company research synthesis, which falls back to a deterministic dossier: a job match score cannot be honestly approximated without the model, but a company dossier has a "the browser research + job posting speak for themselves" fallback to lean on. See `agent/job-matcher.ts`'s `unscoredJobScore()` and the `UNSCORED_MATCH_REASON` constant, and CONTEXT.md's "Unscored job" glossary entry.
 
 ---
 
